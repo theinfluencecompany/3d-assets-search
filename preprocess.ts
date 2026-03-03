@@ -2,7 +2,7 @@
  * Build script — run once to generate the optimized search index.
  * Usage: bun preprocess.ts
  * Input:  data/quaternius-index.json
- * Output: asset-search-preprocessed.json
+ * Output: data/asset-search-preprocessed.json
  */
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -12,9 +12,8 @@ import { z } from "zod";
 import { type ProcessedAsset, type PreprocessedIndex } from "./src/types.js";
 import { cleanClips, tokenize } from "./src/tokenizer.js";
 
-const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = join(SERVER_DIR, "data");
-const OUT_FILE = join(SERVER_DIR, "asset-search-preprocessed.json");
+const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), "data");
+const OUT_FILE = join(DATA_DIR, "asset-search-preprocessed.json");
 
 /** Shape of each entry in the raw poly.pizza export files. */
 const RawFileAssetSchema = z.object({

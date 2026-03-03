@@ -12,7 +12,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { type PreprocessedIndex, SearchAssetsInputSchema, ListClipsInputSchema, GetAssetInputSchema } from "./types.js";
 import { searchAssets, listClips, getAssetById } from "./searcher.js";
 
-const INDEX_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "asset-search-preprocessed.json");
+const INDEX_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "data", "asset-search-preprocessed.json");
 
 function loadIndex(): PreprocessedIndex {
   if (!existsSync(INDEX_PATH)) {
