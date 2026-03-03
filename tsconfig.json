@@ -1,13 +1,14 @@
 {
-	"compilerOptions": {
-		"target": "ES2022",
-		"module": "ESNext",
-		"moduleResolution": "bundler",
-		"strict": true,
-		"exactOptionalPropertyTypes": true,
-		"noUncheckedIndexedAccess": true,
-		"lib": ["ES2022"],
-		"skipLibCheck": true
-	},
-	"include": ["src/**/*"]
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "resolveJsonModule": true,
+    "lib": ["ES2022"],
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*", "cloudflare/**/*", "preprocess.ts"]
 }

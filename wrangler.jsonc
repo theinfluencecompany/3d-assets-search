@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "3d-assets-search",
+  "account_id": "a7d6ae0309680f3ff8859d969c58725f",
+  "main": "cloudflare/src/index.ts",
+  "compatibility_date": "2025-03-10",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // McpAgent requires Durable Objects for per-session state.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "MCP_OBJECT",
+        "class_name": "AssetSearchMcp",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["AssetSearchMcp"],
+    },
+  ],
+
+  "observability": {
+    "enabled": true,
+  },
+}

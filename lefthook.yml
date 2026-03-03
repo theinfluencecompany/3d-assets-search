@@ -1,6 +1,9 @@
 pre-commit:
   commands:
-    biome:
+    format:
       glob: "*.{ts,js,json}"
-      run: bunx biome check --write {staged_files}
+      run: bunx oxfmt --write {staged_files}
       stage_fixed: true
+    lint:
+      glob: "*.{ts,js}"
+      run: bunx oxlint {staged_files}
