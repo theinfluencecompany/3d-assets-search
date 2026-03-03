@@ -6,13 +6,14 @@
   "scripts": {
     "preprocess": "bun preprocess.ts",
     "start": "bun src/mcp-server.ts",
-    "test": "bun test"
+    "test": "vitest run"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.2",
     "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "vitest": "^4.0.18"
   }
 }

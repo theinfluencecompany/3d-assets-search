@@ -1,6 +1,6 @@
-import { describe, it, expect } from "bun:test";
-import type { PreprocessedIndex, ProcessedAsset } from "./types.js";
-import { searchAssets, listClips, getAssetById } from "./searcher.js";
+import { describe, it, expect } from "vitest";
+import type { PreprocessedIndex, ProcessedAsset } from "../src/types.js";
+import { searchAssets, listClips, getAssetById } from "../src/searcher.js";
 
 // ─── Minimal test fixture ──────────────────────────────────────────────────────
 //
@@ -85,15 +85,11 @@ describe("searchAssets", () => {
   });
 
   it("ranks the higher-scoring asset first", () => {
-    // "walk" matches Horse (weight 3) and Knight (weight 3) equally.
-    // Knight has title weight 10 vs Horse title weight 10 — both the same.
-    // But "knight" and "horse" both score 10 from title. "walk" scores 3 for both.
-    // Result order may vary; just verify both are returned.
     const { results } = searchAssets(index, "walk", defaultOptions);
     const ids = results.map((r) => r.id);
     expect(ids).toContain("horse-1");
     expect(ids).toContain("knight-1");
-    expect(ids).not.toContain("sword-1"); // sword has no "walk" token
+    expect(ids).not.toContain("sword-1");
   });
 
   it("excludes static assets when animatedOnly is true", () => {
@@ -120,7 +116,6 @@ describe("searchAssets", () => {
   });
 
   it("expands 'run' synonym to match assets with gallop clip", () => {
-    // "run" expands to ["run","gallop","running","sprint"] — Horse has "gallop" token
     const { results } = searchAssets(index, "run", defaultOptions);
     expect(results.map((r) => r.id)).toContain("horse-1");
   });

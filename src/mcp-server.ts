@@ -16,7 +16,7 @@ const INDEX_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "asset-se
 
 function loadIndex(): PreprocessedIndex {
   if (!existsSync(INDEX_PATH)) {
-    throw new Error(`Preprocessed index not found at ${INDEX_PATH}. Run: bun src/preprocess.ts`);
+    throw new Error(`Preprocessed index not found at ${INDEX_PATH}. Run: bun preprocess.ts`);
   }
   return JSON.parse(readFileSync(INDEX_PATH, "utf8")) as PreprocessedIndex;
 }
@@ -33,42 +33,43 @@ function formatSearchResponse(results: ReturnType<typeof searchAssets>): string 
   });
 }
 
-function main() {
-  const index = loadIndex();
-  const server = new McpServer({
-    name: "3d-assets-search",
-    version: "1.0.0",
-  });
+/** Create and configure the MCP server. Exported for testing via InMemoryTransport. */
+export function createServer(index: PreprocessedIndex): McpServer {
+  const server = new McpServer({ name: "3d-assets-search", version: "1.0.0" });
 
-  server.tool(
+  server.registerTool(
     "search_assets",
-    [
-      "Search 1400+ low-poly 3D assets (Quaternius + Polygonal Mind) by name, type, or animation.",
-      "Returns multiple ranked results with direct GLB download URLs usable immediately in Three.js/R3F.",
-      "Supports semantic synonyms: 'run' finds Gallop, 'attack' finds Bite/Slash/Punch, 'die' finds Death, 'hit' finds HitReact.",
-      "Returns several options so you can pick the best fit for the game context.",
-    ].join(" "),
-    SearchAssetsInputSchema.shape,
+    {
+      description: [
+        "Search 1400+ low-poly 3D assets (Quaternius) by name, type, or animation.",
+        "Returns multiple ranked results with direct GLB download URLs usable immediately in Three.js/R3F.",
+        "Supports semantic synonyms: 'run' finds Gallop, 'attack' finds Bite/Slash/Punch, 'die' finds Death, 'hit' finds HitReact.",
+        "Returns several options so you can pick the best fit for the game context.",
+      ].join(" "),
+      inputSchema: SearchAssetsInputSchema.shape,
+    },
     (args) => {
       const input = SearchAssetsInputSchema.parse(args);
       const results = searchAssets(index, input.query, {
         animatedOnly: input.animated_only,
-        category: input.category,
         limit: input.limit,
         offset: input.offset,
+        ...(input.category !== undefined ? { category: input.category } : {}),
       });
       return { content: [{ type: "text", text: formatSearchResponse(results) }] };
     },
   );
 
-  server.tool(
+  server.registerTool(
     "list_animation_clips",
-    [
-      "List all unique animation clip names available across animated assets.",
-      "Call this before search_assets to discover what motions exist.",
-      "Optionally filter by category (e.g. 'Animals') to see clips for a specific asset type.",
-    ].join(" "),
-    ListClipsInputSchema.shape,
+    {
+      description: [
+        "List all unique animation clip names available across animated assets.",
+        "Call this before search_assets to discover what motions exist.",
+        "Optionally filter by category (e.g. 'Animals') to see clips for a specific asset type.",
+      ].join(" "),
+      inputSchema: ListClipsInputSchema.shape,
+    },
     (args) => {
       const { category } = ListClipsInputSchema.parse(args);
       const clips = listClips(index, category);
@@ -77,10 +78,11 @@ function main() {
     },
   );
 
-  server.tool(
+  server.registerTool(
     "list_categories",
-    "List all asset categories with counts. Call this to understand what kinds of assets are available before searching.",
-    {},
+    {
+      description: "List all asset categories with counts. Call this to understand what kinds of assets are available before searching.",
+    },
     () => {
       const counts: Record<string, number> = {};
       for (const asset of index.assets) {
@@ -96,13 +98,15 @@ function main() {
     },
   );
 
-  server.tool(
+  server.registerTool(
     "get_asset",
-    [
-      "Get full details for one specific asset by ID.",
-      "Use after search_assets to confirm the exact download URL and animation clip names before using in code.",
-    ].join(" "),
-    GetAssetInputSchema.shape,
+    {
+      description: [
+        "Get full details for one specific asset by ID.",
+        "Use after search_assets to confirm the exact download URL and animation clip names before using in code.",
+      ].join(" "),
+      inputSchema: GetAssetInputSchema.shape,
+    },
     (args) => {
       const { id } = GetAssetInputSchema.parse(args);
       const asset = getAssetById(index, id);
@@ -111,9 +115,14 @@ function main() {
     },
   );
 
+  return server;
+}
+
+function main() {
+  const index = loadIndex();
+  const server = createServer(index);
   const transport = new StdioServerTransport();
   server.connect(transport);
-
   process.stderr.write(
     `3d-assets-search MCP ready | ${index.meta.totalAssets} assets | ${index.meta.animatedAssets} animated\n`,
   );

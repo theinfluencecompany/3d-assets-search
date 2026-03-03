@@ -1,1 +1,4 @@
 node_modules/
+# Raw index files are only needed to regenerate the preprocessed output.
+# The server only needs asset-search-preprocessed.json, which is committed.
+data/

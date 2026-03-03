@@ -1,5 +1,5 @@
-import { describe, it, expect } from "bun:test";
-import { tokenize, extractClipAction, cleanClips, expandTokens } from "./tokenizer.js";
+import { describe, it, expect } from "vitest";
+import { tokenize, extractClipAction, cleanClips, expandTokens } from "../src/tokenizer.js";
 
 describe("tokenize", () => {
   it("splits CamelCase into separate tokens", () => {
