@@ -1,0 +1,18 @@
+{
+  "name": "3d-assets-search",
+  "version": "1.0.0",
+  "description": "MCP server — search Quaternius + Polygonal Mind 3D assets by name, category, or animation",
+  "type": "module",
+  "scripts": {
+    "preprocess": "bun preprocess.ts",
+    "start": "bun src/mcp-server.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.10.2",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
