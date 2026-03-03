@@ -9,12 +9,7 @@ export function makeAsset(
 	overrides: Partial<ProcessedAsset> &
 		Pick<
 			ProcessedAsset,
-			| "id"
-			| "title"
-			| "category"
-			| "animated"
-			| "animationClips"
-			| "tokenWeights"
+			"id" | "title" | "category" | "animated" | "animationClips" | "tokenWeights"
 		>,
 ): ProcessedAsset {
 	return {

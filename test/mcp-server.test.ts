@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createServer } from "../src/mcp-server.js";
-import { buildTestIndex, TEST_ASSETS } from "./fixtures.js";
+import { TEST_ASSETS, buildTestIndex } from "./fixtures.js";
 
 // ─── Wire up server + client via InMemoryTransport ────────────────────────────
 
@@ -10,8 +10,7 @@ let client: Client;
 
 beforeAll(async () => {
 	const index = buildTestIndex(TEST_ASSETS);
-	const [clientTransport, serverTransport] =
-		InMemoryTransport.createLinkedPair();
+	const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 
 	const server = createServer(index);
 	await server.connect(serverTransport);

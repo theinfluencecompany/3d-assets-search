@@ -13,11 +13,7 @@ describe("searchAssets", () => {
 	});
 
 	it("returns empty results for unknown query", () => {
-		const { results, total } = searchAssets(
-			TEST_INDEX,
-			"dragonzilla",
-			defaultOptions,
-		);
+		const { results, total } = searchAssets(TEST_INDEX, "dragonzilla", defaultOptions);
 		expect(results).toHaveLength(0);
 		expect(total).toBe(0);
 	});

@@ -1,19 +1,24 @@
 {
-  "name": "3d-assets-search",
-  "version": "1.0.0",
-  "description": "MCP server — search Quaternius low-poly 3D assets by name, category, or animation clip",
-  "type": "module",
-  "scripts": {
-    "preprocess": "bun preprocess.ts",
-    "start": "bun src/mcp-server.ts",
-    "test": "vitest run"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
-    "zod": "^3.24.2"
-  },
-  "devDependencies": {
-    "@types/bun": "latest",
-    "vitest": "^4.0.18"
-  }
+	"name": "3d-assets-search",
+	"version": "1.0.0",
+	"description": "MCP server — search Quaternius low-poly 3D assets by name, category, or animation clip",
+	"type": "module",
+	"scripts": {
+		"preprocess": "bun preprocess.ts",
+		"start": "bun src/mcp-server.ts",
+		"test": "vitest run",
+		"format": "biome format --write .",
+		"lint": "biome lint .",
+		"check": "biome check --write ."
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.27.1",
+		"zod": "^3.24.2"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^1.9.4",
+		"@types/bun": "latest",
+		"lefthook": "^1.11.13",
+		"vitest": "^4.0.18"
+	}
 }
