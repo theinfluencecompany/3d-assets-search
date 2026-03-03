@@ -66,6 +66,14 @@ export type SearchAssetsInput = z.infer<typeof SearchAssetsInputSchema>;
 export type ListClipsInput = z.infer<typeof ListClipsInputSchema>;
 export type GetAssetInput = z.infer<typeof GetAssetInputSchema>;
 
+// ─── Runtime index: PreprocessedIndex + in-memory Map built once at load ─────
+// The Map is not serializable to JSON and must be constructed after parsing.
+
+export interface RuntimeIndex extends PreprocessedIndex {
+  /** O(1) asset lookup by ID — built once in loadIndex(), never rebuilt */
+  readonly assetById: ReadonlyMap<string, ProcessedAsset>;
+}
+
 // ─── What Claude sees in search results (no internal fields) ─────────────────
 
 export type AssetResult = Omit<RawAsset, "animationClips"> & {

@@ -4,37 +4,39 @@
  * Usage: bun src/mcp-server.ts
  */
 
-import { readFileSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { type PreprocessedIndex, SearchAssetsInputSchema, ListClipsInputSchema, GetAssetInputSchema } from "./types.js";
-import { searchAssets, listClips, getAssetById } from "./searcher.js";
+import { GetAssetInputSchema, ListClipsInputSchema, SearchAssetsInputSchema, type PreprocessedIndex, type RuntimeIndex } from "./types.js";
+import { getAssetById, listClips, searchAssets } from "./searcher.js";
 
 const INDEX_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "data", "asset-search-preprocessed.json");
 
-function loadIndex(): PreprocessedIndex {
+function loadIndex(): RuntimeIndex {
   if (!existsSync(INDEX_PATH)) {
     throw new Error(`Preprocessed index not found at ${INDEX_PATH}. Run: bun preprocess.ts`);
   }
-  return JSON.parse(readFileSync(INDEX_PATH, "utf8")) as PreprocessedIndex;
+  const parsed = JSON.parse(readFileSync(INDEX_PATH, "utf8")) as PreprocessedIndex;
+  return { ...parsed, assetById: new Map(parsed.assets.map((a) => [a.id, a])) };
 }
 
 function formatSearchResponse(results: ReturnType<typeof searchAssets>): string {
-  if (results.results.length === 0) {
-    return JSON.stringify({ error: "No assets found. Try broader terms or remove filters." });
-  }
   return JSON.stringify({
     results: results.results,
     total: results.total,
     hasMore: results.hasMore,
-    tip: results.hasMore ? `Use offset=${results.offset + results.results.length} for next page.` : undefined,
+    tip: results.results.length === 0
+      ? "No assets found. Try broader terms or remove filters."
+      : results.hasMore
+        ? `Use offset=${results.offset + results.results.length} for next page.`
+        : undefined,
   });
 }
 
 /** Create and configure the MCP server. Exported for testing via InMemoryTransport. */
-export function createServer(index: PreprocessedIndex): McpServer {
+export function createServer(index: RuntimeIndex): McpServer {
   const server = new McpServer({ name: "3d-assets-search", version: "1.0.0" });
 
   server.registerTool(
@@ -118,14 +120,20 @@ export function createServer(index: PreprocessedIndex): McpServer {
   return server;
 }
 
-function main() {
+async function main() {
   const index = loadIndex();
   const server = createServer(index);
   const transport = new StdioServerTransport();
-  server.connect(transport);
+  await server.connect(transport);
   process.stderr.write(
     `3d-assets-search MCP ready | ${index.meta.totalAssets} assets | ${index.meta.animatedAssets} animated\n`,
   );
 }
 
-main();
+// Only run when executed directly — not when imported in tests.
+if (import.meta.main) {
+  main().catch((err) => {
+    process.stderr.write(`Fatal: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.exit(1);
+  });
+}

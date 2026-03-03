@@ -1,5 +1,5 @@
-import type { PreprocessedIndex, ProcessedAsset, AssetResult, SearchResults } from "./types.js";
-import { tokenize, expandTokens } from "./tokenizer.js";
+import { expandTokens, tokenize } from "./tokenizer.js";
+import type { AssetResult, ProcessedAsset, RuntimeIndex, SearchResults } from "./types.js";
 
 const ANIMATED_MOTION_BONUS = 5;
 const MOTION_TOKENS = new Set(["run", "walk", "jump", "attack", "animate", "gallop", "swim", "fly"]);
@@ -28,7 +28,7 @@ interface SearchOptions {
 }
 
 export function searchAssets(
-  index: PreprocessedIndex,
+  index: RuntimeIndex,
   query: string,
   options: SearchOptions,
 ): SearchResults {
@@ -42,11 +42,9 @@ export function searchAssets(
     for (const id of ids) candidateIds.add(id);
   }
 
-  const assetById = new Map(index.assets.map((a) => [a.id, a]));
-
   const scored = [...candidateIds]
     .map((id) => {
-      const asset = assetById.get(id);
+      const asset = index.assetById.get(id);
       return asset ? { asset, score: scoreAsset(asset, expanded) } : null;
     })
     .filter((r): r is { asset: ProcessedAsset; score: number } => r !== null && r.score > 0)
@@ -68,14 +66,14 @@ export function searchAssets(
   };
 }
 
-export function listClips(index: PreprocessedIndex, category?: string): string[] {
+export function listClips(index: RuntimeIndex, category?: string): string[] {
   const assets = index.assets.filter(
     (a) => a.animated && (!category || a.category.toLowerCase().includes(category.toLowerCase())),
   );
   return [...new Set(assets.flatMap((a) => a.animationClips))].sort();
 }
 
-export function getAssetById(index: PreprocessedIndex, id: string): AssetResult | undefined {
-  const asset = index.assets.find((a) => a.id === id);
+export function getAssetById(index: RuntimeIndex, id: string): AssetResult | undefined {
+  const asset = index.assetById.get(id);
   return asset ? toAssetResult(asset) : undefined;
 }
