@@ -4,7 +4,7 @@
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createServer } from "../src/mcp-server.js";
 import { MOCK_INDEX } from "./fixtures/mock-index.js";
 

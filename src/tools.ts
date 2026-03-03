@@ -3,13 +3,14 @@
  * Tool implementations are transport-agnostic and return structured data.
  */
 
-import { formatSearchResponse } from "./format.js";
+import { z } from "zod";
 import { getAssetById, listClips, searchAssets } from "./searcher.js";
 import {
   GetAssetInputSchema,
   ListClipsInputSchema,
-  SearchAssetsInputSchema,
   type RuntimeIndex,
+  SearchAssetsInputSchema,
+  type SearchResults,
 } from "./types.js";
 
 // ─── Tool Result Types ────────────────────────────────────────────────────────
@@ -18,6 +19,34 @@ export interface ToolResult {
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
   [x: string]: unknown;
+}
+
+// ─── Private Helpers ──────────────────────────────────────────────────────────
+
+function toolError(prefix: string, error: unknown): ToolResult {
+  return {
+    content: [
+      {
+        type: "text",
+        text: `${prefix}: ${error instanceof Error ? error.message : String(error)}`,
+      },
+    ],
+    isError: true,
+  };
+}
+
+function formatSearchResponse(results: SearchResults): string {
+  return JSON.stringify({
+    results: results.results,
+    total: results.total,
+    hasMore: results.hasMore,
+    tip:
+      results.results.length === 0
+        ? "No assets found. Try broader terms or remove filters."
+        : results.hasMore
+          ? `Use offset=${results.offset + results.results.length} for next page.`
+          : undefined,
+  });
 }
 
 // ─── Tool Implementations ─────────────────────────────────────────────────────
@@ -35,15 +64,7 @@ export function searchAssetsTool(index: RuntimeIndex, args: unknown): ToolResult
       content: [{ type: "text", text: formatSearchResponse(results) }],
     };
   } catch (error) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Search error: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-      isError: true,
-    };
+    return toolError("Search error", error);
   }
 }
 
@@ -54,42 +75,22 @@ export function listAnimationClipsTool(index: RuntimeIndex, args: unknown): Tool
     const text = `${clips.length} unique clips${category ? ` in ${category}` : ""}:\n${clips.join(", ")}`;
     return { content: [{ type: "text", text }] };
   } catch (error) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: `List clips error: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-      isError: true,
-    };
+    return toolError("List clips error", error);
   }
 }
 
 export function listCategoriesTool(index: RuntimeIndex): ToolResult {
-  try {
-    const counts: Record<string, number> = {};
-    for (const asset of index.assets) {
-      const key = `${asset.category} (${asset.creator})`;
-      counts[key] = (counts[key] ?? 0) + 1;
-    }
-    const lines = Object.entries(counts)
-      .sort(([, a], [, b]) => b - a)
-      .map(([cat, n]) => `  ${n}× ${cat}`);
-    const animated = index.assets.filter((a) => a.animated).length;
-    const text = `${index.assets.length} total assets (${animated} animated):\n${lines.join("\n")}`;
-    return { content: [{ type: "text", text }] };
-  } catch (error) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: `List categories error: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-      isError: true,
-    };
+  const counts: Record<string, number> = {};
+  for (const asset of index.assets) {
+    const key = `${asset.category} (${asset.creator})`;
+    counts[key] = (counts[key] ?? 0) + 1;
   }
+  const lines = Object.entries(counts)
+    .sort(([, a], [, b]) => b - a)
+    .map(([cat, n]) => `  ${n}× ${cat}`);
+  const animated = index.assets.filter((a) => a.animated).length;
+  const text = `${index.assets.length} total assets (${animated} animated):\n${lines.join("\n")}`;
+  return { content: [{ type: "text", text }] };
 }
 
 export function getAssetTool(index: RuntimeIndex, args: unknown): ToolResult {
@@ -106,21 +107,11 @@ export function getAssetTool(index: RuntimeIndex, args: unknown): ToolResult {
       content: [{ type: "text", text: JSON.stringify(asset, null, 2) }],
     };
   } catch (error) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Get asset error: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-      isError: true,
-    };
+    return toolError("Get asset error", error);
   }
 }
 
 // ─── Tool Metadata ────────────────────────────────────────────────────────────
-
-import { z } from "zod";
 
 /** Schema for tools with no required arguments */
 const EmptyInputSchema = z.object({}).strict();

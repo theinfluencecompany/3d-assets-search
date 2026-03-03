@@ -25,24 +25,27 @@ export type RawAsset = z.infer<typeof RawAssetSchema>;
 
 // ─── Preprocessed index (built once by preprocess.ts, loaded at startup) ─────
 
-export interface ProcessedAsset extends RawAsset {
+export const ProcessedAssetSchema = RawAssetSchema.extend({
   /** token → relevance weight (title=10, category=5, tags=4, clips=3) */
-  readonly tokenWeights: Readonly<Record<string, number>>;
-}
+  tokenWeights: z.record(z.string(), z.number()),
+});
 
-export interface PreprocessedIndex {
-  readonly meta: {
-    readonly built: string;
-    readonly totalAssets: number;
-    readonly animatedAssets: number;
-    readonly totalTokens: number;
-  };
-  readonly assets: readonly ProcessedAsset[];
+export const PreprocessedIndexSchema = z.object({
+  meta: z.object({
+    built: z.string(),
+    totalAssets: z.number(),
+    animatedAssets: z.number(),
+    totalTokens: z.number(),
+  }),
+  assets: z.array(ProcessedAssetSchema),
   /** token → asset IDs — O(1) candidate lookup */
-  readonly invertedIndex: Readonly<Record<string, readonly string[]>>;
+  invertedIndex: z.record(z.string(), z.array(z.string())),
   /** all unique clean animation clip names, sorted */
-  readonly allClips: readonly string[];
-}
+  allClips: z.array(z.string()),
+});
+
+export type ProcessedAsset = z.infer<typeof ProcessedAssetSchema>;
+export type PreprocessedIndex = z.infer<typeof PreprocessedIndexSchema>;
 
 /** PreprocessedIndex + in-memory Map built once at load. Not serializable to JSON. */
 export interface RuntimeIndex extends PreprocessedIndex {

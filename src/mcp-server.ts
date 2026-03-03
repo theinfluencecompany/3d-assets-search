@@ -16,7 +16,7 @@ import {
   searchAssetsTool,
   TOOL_DEFINITIONS,
 } from "./tools.js";
-import { type PreprocessedIndex, type RuntimeIndex } from "./types.js";
+import { PreprocessedIndexSchema, type RuntimeIndex } from "./types.js";
 
 const INDEX_PATH = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -27,9 +27,9 @@ const INDEX_PATH = join(
 
 function loadIndex(): RuntimeIndex {
   if (!existsSync(INDEX_PATH)) {
-    throw new Error(`Preprocessed index not found at ${INDEX_PATH}. Run: bun preprocess.ts`);
+    throw new Error(`Preprocessed index not found. Run: bun run preprocess`);
   }
-  const parsed = JSON.parse(readFileSync(INDEX_PATH, "utf8")) as PreprocessedIndex;
+  const parsed = PreprocessedIndexSchema.parse(JSON.parse(readFileSync(INDEX_PATH, "utf8")));
   return { ...parsed, assetById: new Map(parsed.assets.map((a) => [a.id, a])) };
 }
 

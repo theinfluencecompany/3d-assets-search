@@ -21,7 +21,7 @@ export function tokenize(text: string): string[] {
   return text
     .replace(/([a-z])([A-Z])/g, "$1 $2") // camelCase → camel Case
     .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2") // ACRONym → ACRO nym
-    .replace(/[_|.,\-]/g, " ") // separators → space
+    .replace(/[_|.,-]/g, " ") // separators → space
     .toLowerCase()
     .split(/\s+/)
     .map((t) => t.trim())

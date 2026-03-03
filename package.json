@@ -4,11 +4,15 @@
   "description": "MCP server — search Quaternius low-poly 3D assets by name, category, or animation clip",
   "type": "module",
   "scripts": {
-    "preprocess": "bun preprocess.ts",
+    "preprocess": "bun scripts/preprocess.ts",
+    "pipeline": "bun run preprocess",
+    "prestart": "bun run preprocess",
     "start": "bun src/mcp-server.ts",
+    "predev": "bun run preprocess",
     "dev": "wrangler dev",
+    "predeploy": "bun run preprocess",
     "deploy": "wrangler deploy",
-    "cf-typegen": "wrangler types",
+    "cf-typegen": "wrangler types src/worker-configuration.d.ts",
     "test": "vitest run",
     "format": "oxfmt --write .",
     "lint": "oxlint .",
@@ -20,6 +24,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1000.0",
     "@types/bun": "latest",
     "lefthook": "^1.11.13",
     "oxfmt": "^0.36.0",

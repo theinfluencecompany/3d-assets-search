@@ -2,8 +2,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "3d-assets-search",
   "account_id": "a7d6ae0309680f3ff8859d969c58725f",
-  "main": "cloudflare/src/index.ts",
-  "compatibility_date": "2025-03-10",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-03-01",
   "compatibility_flags": ["nodejs_compat"],
 
   // McpAgent requires Durable Objects for per-session state.
@@ -21,6 +21,26 @@
       "new_sqlite_classes": ["AssetSearchMcp"],
     },
   ],
+
+  // R2 bucket — stores all GLB asset files.
+  // Create before deploying: wrangler r2 bucket create 3d-assets
+  "r2_buckets": [
+    {
+      "binding": "ASSETS_BUCKET",
+      "bucket_name": "3d-assets",
+    },
+  ],
+
+  // Custom domain — Cloudflare auto-creates the DNS record on the fried.gg zone.
+  "routes": [
+    { "pattern": "assets.fried.gg", "custom_domain": true },
+  ],
+
+  // Public base URL used to rewrite Poly Pizza source URLs → stable R2 URLs at Worker startup.
+  // GLBs will be served from: https://assets.fried.gg/files/{id}.glb
+  "vars": {
+    "ASSETS_BASE_URL": "https://assets.fried.gg",
+  },
 
   "observability": {
     "enabled": true,
