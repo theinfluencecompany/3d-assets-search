@@ -2,7 +2,15 @@
   "platforms": {
     "poly.pizza": {
       "access": "open",
-      "creators": ["Quaternius", "Kenney", "Zsky", "J-Toastie", "MilkAndBanana", "Pichuliru"]
+      "creators": [
+        "Quaternius",
+        "Kenney",
+        "Zsky",
+        "J-Toastie",
+        "MilkAndBanana",
+        "Pichuliru",
+        "Poly by Google"
+      ]
     },
     "restricted": {
       "access": "restricted",

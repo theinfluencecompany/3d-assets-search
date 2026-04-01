@@ -91,6 +91,7 @@ const FIELD_WEIGHTS = {
   title: 10,
   category: 5,
   tags: 4,
+  styleTags: 4,
   clips: 3,
   creator: 2,
 } as const;
@@ -131,6 +132,7 @@ function buildRawTF(asset: Omit<ProcessedAsset, "tokenWeights" | "titleTokens">)
   addTokens(asset.category, FIELD_WEIGHTS.category);
   addTokens(asset.creator, FIELD_WEIGHTS.creator);
   for (const tag of asset.tags) addTokens(tag, FIELD_WEIGHTS.tags);
+  for (const tag of asset.styleTags) addTokens(tag, FIELD_WEIGHTS.styleTags);
   for (const clip of asset.animationClips) addTokens(clip, FIELD_WEIGHTS.clips);
 
   const docLength = Object.values(tf).reduce((s, v) => s + v, 0);

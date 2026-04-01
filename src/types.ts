@@ -8,6 +8,7 @@ export const RawAssetSchema = z.object({
   creator: z.string(),
   category: z.string(),
   tags: z.array(z.string()),
+  styleTags: z.array(z.string()).default([]),
   animated: z.boolean(),
   animationClips: z.array(z.string()),
   license: z.string(),

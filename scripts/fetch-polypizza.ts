@@ -53,6 +53,7 @@ interface SourceAsset {
   title: string;
   category: string;
   tags: string[];
+  styleTags: string[];
   animated: boolean;
   animationClips: string[];
   license: string;
@@ -197,6 +198,7 @@ async function fetchAllModelsOldApi(username: string, apiKey: string): Promise<S
     title: m.title,
     category: "",
     tags: [],
+    styleTags: [],
     animated: false, // unknown — will be set to true if GLB contains animations
     animationClips: [],
     license: m.licence,
@@ -212,13 +214,18 @@ async function fetchAllModelsOldApi(username: string, apiKey: string): Promise<S
 async function fetchAndExtractClips(
   assets: SourceAsset[],
   cachedClips: Map<string, string[]>,
+  cachedStyleTags: Map<string, string[]>,
 ): Promise<SourceAsset[]> {
   // For v1.1: only fetch clips for assets marked Animated
   // For old API: fetch clips for ALL assets (Animated field unknown), use result to set animated
   const needsGlb = assets.filter((a) => !cachedClips.has(a.id));
 
   if (needsGlb.length === 0) {
-    return assets.map((a) => ({ ...a, animationClips: cachedClips.get(a.id) ?? a.animationClips }));
+    return assets.map((a) => ({
+      ...a,
+      styleTags: cachedStyleTags.get(a.id) ?? a.styleTags,
+      animationClips: cachedClips.get(a.id) ?? a.animationClips,
+    }));
   }
 
   console.log(`\n🎬 Extracting clips (concurrency=${CONCURRENCY})...`);
@@ -242,21 +249,30 @@ async function fetchAndExtractClips(
 
   return assets.map((a) => {
     const animationClips = clips.get(a.id) ?? a.animationClips;
-    return { ...a, animated: a.animated || animationClips.length > 0, animationClips };
+    return {
+      ...a,
+      styleTags: cachedStyleTags.get(a.id) ?? a.styleTags,
+      animated: a.animated || animationClips.length > 0,
+      animationClips,
+    };
   });
 }
 
 async function fetchCreator(username: string, apiKey: string): Promise<void> {
-  const outFile = join(SOURCES_DIR, `${username.toLowerCase()}.json`);
+  const outFile = join(SOURCES_DIR, `${username.toLowerCase().replace(/\s+/g, "-")}.json`);
 
   // Load existing clips as cache to avoid re-fetching
   const cachedClips = new Map<string, string[]>();
+  const cachedStyleTags = new Map<string, string[]>();
   if (existsSync(outFile)) {
     const existing = JSON.parse(readFileSync(outFile, "utf8")) as { assets?: SourceAsset[] };
     for (const asset of existing.assets ?? []) {
       if (asset.animationClips.length > 0) cachedClips.set(asset.id, asset.animationClips);
+      if (asset.styleTags?.length > 0) cachedStyleTags.set(asset.id, asset.styleTags);
     }
-    console.log(`📦 Cache: ${cachedClips.size} assets with clips already stored`);
+    console.log(
+      `📦 Cache: ${cachedClips.size} assets with clips, ${cachedStyleTags.size} with style tags`,
+    );
   }
 
   console.log(`🌐 Fetching models for ${username}...`);
@@ -264,7 +280,33 @@ async function fetchCreator(username: string, apiKey: string): Promise<void> {
   // Try v1.1 API first, fall back to old API on failure
   let assets: SourceAsset[];
   try {
-    const models = await fetchAllModels(username, apiKey);
+    let models = await fetchAllModels(username, apiKey);
+    // If v1.1 returned only one page, check old API — migrated accounts may be capped at 32
+    if (models.length <= 32) {
+      try {
+        const oldAssets = await fetchAllModelsOldApi(username, apiKey);
+        if (oldAssets.length > models.length) {
+          console.log(
+            `\n⚠️  v1.1 returned only ${models.length} models; old API has ${oldAssets.length} — using old API`,
+          );
+          const rawAssets = oldAssets.map((a) => ({
+            ...a,
+            styleTags: cachedStyleTags.get(a.id) ?? [],
+          }));
+          assets = await fetchAndExtractClips(rawAssets, cachedClips, cachedStyleTags);
+          writeFileSync(outFile, JSON.stringify({ platform: "poly.pizza", assets }, null, 2));
+          const animatedCount = assets.filter((a) => a.animated).length;
+          const withClips = assets.filter((a) => a.animationClips.length > 0).length;
+          console.log(`\n📝 ${outFile}`);
+          console.log(
+            `✅ ${assets.length} assets | ${animatedCount} animated | ${withClips} with clips`,
+          );
+          return;
+        }
+      } catch {
+        // old API also failed — continue with v1.1 results
+      }
+    }
     console.log(`\n✅ ${models.length} models (v1.1)`);
 
     const animatedModels = models.filter((m) => m.Animated);
@@ -298,6 +340,7 @@ async function fetchCreator(username: string, apiKey: string): Promise<void> {
       title: m.Title,
       category: m.Category,
       tags: m.Tags ?? [],
+      styleTags: cachedStyleTags.get(m.ID) ?? [],
       animated: m.Animated,
       animationClips: clips.get(m.ID) ?? [],
       license: m.Licence,
@@ -313,7 +356,7 @@ async function fetchCreator(username: string, apiKey: string): Promise<void> {
     try {
       const rawAssets = await fetchAllModelsOldApi(username, apiKey);
       console.log(`\n✅ ${rawAssets.length} models (old API — category/tags/triCount unavailable)`);
-      assets = await fetchAndExtractClips(rawAssets, cachedClips);
+      assets = await fetchAndExtractClips(rawAssets, cachedClips, cachedStyleTags);
     } catch (oldErr) {
       throw new Error(
         `Both APIs failed. Old API: ${oldErr instanceof Error ? oldErr.message : oldErr}`,
@@ -354,7 +397,7 @@ async function main() {
     }
 
     const missing = creators.filter(
-      (c) => !existsSync(join(SOURCES_DIR, `${c.toLowerCase()}.json`)),
+      (c) => !existsSync(join(SOURCES_DIR, `${c.toLowerCase().replace(/\s+/g, "-")}.json`)),
     );
 
     if (missing.length === 0) {

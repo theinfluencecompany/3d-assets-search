@@ -24,9 +24,14 @@ poly.pizza API                        GLB files (static.poly.pizza)
                        ▼
               data/sources/{creator}.json
               { assets: [{ id, title, category, tags,
-                           animated, animationClips,
+                           styleTags, animated, animationClips,
                            license, triCount,
                            thumbnail, download, polyPizzaUrl }] }
+                       │
+                       │   scripts/tag-style.ts
+                       │   Gemini Vision API → thumbnail → styleTags
+                       │   (chibi, low-poly, cartoon, cute, blocky…)
+                       │   cached: assets with styleTags skipped
                        │
                        │   data/sources.config.json
                        │   (platform → access mode)
@@ -88,7 +93,7 @@ Claude sees a tip: "No exact matches — showing partial results."
 
 Token weights are pre-baked at index build time using BM25 (k₁=1.5, b=0.75).
 IDF automatically down-weights common tokens like "character" and boosts rare ones like "trebuchet".
-Field weights (title=10, category=5, tags=4, clips=3, creator=2) control per-field TF contribution.
+Field weights (title=10, category=5, tags=4, styleTags=4, clips=3, creator=2) control per-field TF contribution.
 
 ### Porter stemming
 
@@ -112,8 +117,17 @@ One-directional expansion — applied to raw query tokens before stemming:
 | `attack` | bite, punch, slash, stab, kick      |
 | `die`    | death, dead                         |
 | `hit`    | hitreact, hitreceive                |
+| `chibi`  | cute, blocky, cartoon               |
 | `human`  | character, person, man, woman       |
 | `quad`   | horse, wolf, cow, deer, dog, cat    |
+
+### Vision style tagging
+
+Each asset's thumbnail is analyzed by Gemini Vision to generate 3–5 style tags (e.g. `chibi`, `low-poly`, `cartoon`, `cute`, `blocky`, `colorful`).
+These `styleTags` are stored in the source JSON and indexed at the same weight as creator tags (4).
+This lets queries like "chibi character" or "cute blocky animals" find assets that creators never explicitly tagged as such.
+
+Tags are generated once and cached — re-runs only process new untagged assets.
 
 ### Phrase boost
 
@@ -268,8 +282,9 @@ No changes to `sources.config.json` needed — `restricted` is already a known p
 | Script               | What it does                                                                   |
 | -------------------- | ------------------------------------------------------------------------------ |
 | `bun run fetch`      | Fetch missing creators from config; `bun run fetch <Name>` to refresh one      |
+| `bun run tag`        | Generate vision-based style tags via Gemini; `bun run tag <Name>` for one creator, `--force` to re-tag |
 | `bun run preprocess` | Build BM25 search index from `data/sources/*.json`                             |
-| `bun run pipeline`   | `fetch` + `preprocess` in sequence                                             |
+| `bun run pipeline`   | `fetch` + `tag` + `preprocess` in sequence                                     |
 | `bun run start`      | Preprocess then start local stdio MCP server                                   |
 | `bun run dev`        | Preprocess then `wrangler dev`                                                 |
 | `bun run deploy`     | Preprocess then `wrangler deploy`                                              |

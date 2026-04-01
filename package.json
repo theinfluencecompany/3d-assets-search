@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "fetch": "bun scripts/fetch-polypizza.ts",
+    "tag": "bun scripts/tag-style.ts",
     "preprocess": "bun scripts/preprocess.ts",
-    "pipeline": "bun run fetch && bun run preprocess",
+    "pipeline": "bun run fetch && bun run tag && bun run preprocess",
     "prestart": "bun run preprocess",
     "start": "bun src/mcp-server.ts",
     "predev": "bun run preprocess",

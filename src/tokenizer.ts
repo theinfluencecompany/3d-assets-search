@@ -79,6 +79,7 @@ const SYNONYMS: Readonly<Record<string, readonly string[]>> = {
   shoot: ["shoot", "gun", "fire", "reload"],
   hit: ["hitreact", "hitrecieve", "recievehit"],
   dance: ["dance", "wave", "hello"],
+  chibi: ["chibi", "cute", "blocky", "cartoon"],
   human: ["character", "person", "man", "woman", "people"],
   animal: ["animal", "creature", "beast"],
   quad: ["horse", "wolf", "cow", "deer", "dog", "cat", "gallop"],
