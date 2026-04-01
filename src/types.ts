@@ -26,8 +26,10 @@ export type RawAsset = z.infer<typeof RawAssetSchema>;
 // ─── Preprocessed index (built once by preprocess.ts, loaded at startup) ─────
 
 export const ProcessedAssetSchema = RawAssetSchema.extend({
-  /** token → relevance weight (title=10, category=5, tags=4, clips=3) */
+  /** token → BM25 score pre-baked at index build time */
   tokenWeights: z.record(z.string(), z.number()),
+  /** stemmed title tokens for phrase boost detection */
+  titleTokens: z.array(z.string()),
 });
 
 export const PreprocessedIndexSchema = z.object({
@@ -77,8 +79,15 @@ export type GetAssetInput = z.infer<typeof GetAssetInputSchema>;
 
 // ─── What Claude sees in search results (no internal fields) ─────────────────
 
-export type AssetResult = Omit<RawAsset, "animationClips"> & {
+export type AssetResult = {
+  readonly id: string;
+  readonly title: string;
+  readonly category: string;
+  readonly animated: boolean;
   readonly animationClips: readonly string[];
+  readonly download: string;
+  readonly polyPizzaUrl: string;
+  readonly score: number;
 };
 
 export interface SearchResults {
@@ -86,4 +95,5 @@ export interface SearchResults {
   readonly total: number;
   readonly offset: number;
   readonly hasMore: boolean;
+  readonly fallback?: boolean;
 }

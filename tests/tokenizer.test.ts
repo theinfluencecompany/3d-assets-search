@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { cleanClips, expandTokens, extractClipAction, tokenize } from "../src/tokenizer.js";
 
 describe("tokenize", () => {
-  it("lowercases and splits on whitespace", () => {
-    expect(tokenize("Wolf Animal")).toEqual(["wolf", "animal"]);
+  it("lowercases, splits on whitespace, and stems", () => {
+    // "animal" stems to "anim" via Porter stemmer
+    expect(tokenize("Wolf Animal")).toEqual(["wolf", "anim"]);
   });
 
   it("splits camelCase into separate tokens", () => {
@@ -27,7 +28,8 @@ describe("tokenize", () => {
   });
 
   it("treats dashes as separators", () => {
-    expect(tokenize("low-poly")).toEqual(expect.arrayContaining(["low", "poly"]));
+    // "poly" stems to "poli" via Porter stemmer
+    expect(tokenize("low-poly")).toEqual(expect.arrayContaining(["low", "poli"]));
   });
 
   it("filters stopwords", () => {

@@ -4,8 +4,9 @@
   "description": "MCP server — search Quaternius low-poly 3D assets by name, category, or animation clip",
   "type": "module",
   "scripts": {
+    "fetch": "bun scripts/fetch-polypizza.ts",
     "preprocess": "bun scripts/preprocess.ts",
-    "pipeline": "bun run preprocess",
+    "pipeline": "bun run fetch && bun run preprocess",
     "prestart": "bun run preprocess",
     "start": "bun src/mcp-server.ts",
     "predev": "bun run preprocess",
@@ -20,7 +21,9 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.26.0",
+    "@types/natural": "^6.0.1",
     "agents": "^0.5.0",
+    "natural": "^8.1.1",
     "zod": "^3.24.2"
   },
   "devDependencies": {

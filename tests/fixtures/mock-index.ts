@@ -13,7 +13,8 @@ const WOLF: ProcessedAsset = {
   thumbnail: "https://example.com/wolf.png",
   download: "https://example.com/wolf.glb",
   polyPizzaUrl: "https://poly.pizza/wolf",
-  tokenWeights: { wolf: 10, animal: 5, run: 3, idle: 3, attack: 3 },
+  titleTokens: ["wolf"],
+  tokenWeights: { wolf: 10, anim: 5, run: 3, idl: 3, attack: 3 },
 };
 
 const TREE: ProcessedAsset = {
@@ -29,10 +30,11 @@ const TREE: ProcessedAsset = {
   thumbnail: "https://example.com/tree.png",
   download: "https://example.com/tree.glb",
   polyPizzaUrl: "https://poly.pizza/tree",
-  tokenWeights: { pine: 10, tree: 7, nature: 5 },
+  titleTokens: ["pine", "tree"],
+  tokenWeights: { pine: 10, tree: 7, natur: 5 },
 };
 
-export const ASSETS = [WOLF, TREE] as const;
+export const ASSETS: ProcessedAsset[] = [WOLF, TREE];
 
 export const MOCK_INDEX: RuntimeIndex = {
   meta: {
@@ -44,13 +46,13 @@ export const MOCK_INDEX: RuntimeIndex = {
   assets: ASSETS,
   invertedIndex: {
     wolf: ["wolf-001"],
-    animal: ["wolf-001"],
+    anim: ["wolf-001"],
     run: ["wolf-001"],
-    idle: ["wolf-001"],
+    idl: ["wolf-001"],
     attack: ["wolf-001"],
     pine: ["tree-001"],
     tree: ["tree-001"],
-    nature: ["tree-001"],
+    natur: ["tree-001"],
   },
   allClips: ["Attack", "Idle", "Run"],
   assetById: new Map(ASSETS.map((a) => [a.id, a])),

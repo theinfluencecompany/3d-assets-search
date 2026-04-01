@@ -1,5 +1,11 @@
 // Pure tokenization functions — no side effects, no I/O.
 
+import { PorterStemmer } from "natural";
+
+export function stem(token: string): string {
+  return PorterStemmer.stem(token);
+}
+
 const STOPWORDS = new Set([
   "the",
   "and",
@@ -16,8 +22,8 @@ const STOPWORDS = new Set([
   "by",
 ]);
 
-/** Split text into lowercase search tokens, handling CamelCase and separators. */
-export function tokenize(text: string): string[] {
+/** Split text into lowercase tokens without stemming. */
+export function tokenizeRaw(text: string): string[] {
   return text
     .replace(/([a-z])([A-Z])/g, "$1 $2") // camelCase → camel Case
     .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2") // ACRONym → ACRO nym
@@ -26,6 +32,11 @@ export function tokenize(text: string): string[] {
     .split(/\s+/)
     .map((t) => t.trim())
     .filter((t) => t.length > 1 && !STOPWORDS.has(t));
+}
+
+/** Split text into lowercase stemmed search tokens, handling CamelCase and separators. */
+export function tokenize(text: string): string[] {
+  return tokenizeRaw(text).map(stem);
 }
 
 /**

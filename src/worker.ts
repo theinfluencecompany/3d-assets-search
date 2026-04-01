@@ -12,7 +12,7 @@
 // oxlint-disable-next-line triple-slash-reference -- wrangler requires this for Env type
 /// <reference path="./worker-configuration.d.ts" />
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { McpAgent } from "agents/mcp";
 import rawIndex from "../data/asset-search-preprocessed.json";
 import {
@@ -27,25 +27,16 @@ import type { PreprocessedIndex, RuntimeIndex } from "./types.js";
 // ─── McpAgent ─────────────────────────────────────────────────────────────────
 
 export class AssetSearchMcp extends McpAgent<Env> {
-  // HACK: `agents` bundles its own copy of @modelcontextprotocol/sdk in
-  // node_modules/agents/node_modules/@modelcontextprotocol/sdk. Even when
-  // our top-level SDK version matches, bun/Node resolve two separate module
-  // instances, making McpServer types structurally incompatible under
-  // exactOptionalPropertyTypes. Declaring `server` as `any` + casting avoids
-  // the false mismatch while keeping registerTool calls typed via the cast.
-  // Remove once agents promotes @modelcontextprotocol/sdk to a peerDependency.
-  server!: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+  server = new McpServer({ name: "3d-assets-search", version: "1.0.0" }) as any;
 
-  // Initialized in init() once.
   #index!: RuntimeIndex;
 
   async init() {
-    // Assets in the preprocessed JSON already have R2 URLs from `bun run preprocess`.
     const parsed = rawIndex as unknown as PreprocessedIndex;
     this.#index = { ...parsed, assetById: new Map(parsed.assets.map((a) => [a.id, a])) };
 
     const index = this.#index;
-    const server = this.server as McpServer;
+    const server = this.server as InstanceType<typeof McpServer>;
 
     server.registerTool("search_assets", TOOL_DEFINITIONS.search_assets, (args: unknown) =>
       searchAssetsTool(index, args),
@@ -67,7 +58,7 @@ export class AssetSearchMcp extends McpAgent<Env> {
 // ─── Worker fetch handler ──────────────────────────────────────────────────────
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     // Serve GLB files from R2 with long-lived caching.
@@ -83,12 +74,13 @@ export default {
           "Content-Type": "model/gltf-binary",
           "Cache-Control": "public, max-age=31536000, immutable",
           "Content-Length": String(object.size),
+          "Access-Control-Allow-Origin": "*",
         },
       });
     }
 
     if (url.pathname === "/mcp") {
-      return AssetSearchMcp.serve("/mcp").fetch(request, env);
+      return AssetSearchMcp.serve("/mcp").fetch(request, env, ctx);
     }
 
     return new Response(

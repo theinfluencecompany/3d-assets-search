@@ -33,13 +33,13 @@
 
   // Custom domain — Cloudflare auto-creates the DNS record on the fried.gg zone.
   "routes": [
-    { "pattern": "assets.fried.gg", "custom_domain": true },
+    { "pattern": "mcp.fried.gg", "custom_domain": true },
   ],
 
   // Public base URL used to rewrite Poly Pizza source URLs → stable R2 URLs at Worker startup.
   // GLBs will be served from: https://assets.fried.gg/files/{id}.glb
   "vars": {
-    "ASSETS_BASE_URL": "https://assets.fried.gg",
+    "ASSETS_BASE_URL": "https://mcp.fried.gg",
   },
 
   "observability": {

@@ -1,0 +1,12 @@
+{
+  "platforms": {
+    "poly.pizza": {
+      "access": "open",
+      "creators": ["Quaternius", "Kenney", "Zsky", "J-Toastie", "MilkAndBanana", "Pichuliru"]
+    },
+    "restricted": {
+      "access": "restricted",
+      "creators": []
+    }
+  }
+}

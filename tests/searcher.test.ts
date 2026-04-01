@@ -64,6 +64,7 @@ describe("searchAssets", () => {
       thumbnail: "",
       download: "",
       polyPizzaUrl: "",
+      titleTokens: ["asset"],
       tokenWeights: { test: 10 - i },
     }));
     const idx: RuntimeIndex = {

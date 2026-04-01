@@ -41,11 +41,13 @@ function formatSearchResponse(results: SearchResults): string {
     total: results.total,
     hasMore: results.hasMore,
     tip:
-      results.results.length === 0
+      results.total === 0
         ? "No assets found. Try broader terms or remove filters."
-        : results.hasMore
-          ? `Use offset=${results.offset + results.results.length} for next page.`
-          : undefined,
+        : results.fallback
+          ? "No exact match for all terms. Showing partial results — try a more specific query."
+          : results.hasMore
+            ? `Use offset=${results.offset + results.results.length} for next page.`
+            : undefined,
   });
 }
 
@@ -119,24 +121,26 @@ const EmptyInputSchema = z.object({}).strict();
 export const TOOL_DEFINITIONS = {
   search_assets: {
     description: [
-      "Search 1400+ low-poly 3D assets (Quaternius) by name, type, or animation.",
-      "Returns multiple ranked results with direct GLB download URLs usable immediately in Three.js/R3F.",
-      "Supports semantic synonyms: 'run' finds Gallop, 'attack' finds Bite/Slash/Punch, 'die' finds Death, 'hit' finds HitReact.",
-      "Returns several options so you can pick the best fit for the game context.",
+      "Search free low-poly 3D assets from multiple creators (Quaternius, Kenney, etc.) by name, category, or animation.",
+      "Uses BM25 ranking with Porter stemming — 'wolves' finds wolf, 'running' finds run.",
+      "Supports semantic synonyms: 'run' finds Gallop/Sprint, 'attack' finds Bite/Slash/Punch, 'die' finds Death, 'hit' finds HitReact.",
+      "Multi-word queries get a phrase boost when all terms appear in the title.",
+      "If no exact match is found, returns partial results automatically.",
+      "Results include score, direct GLB download URLs, and animation clip names — usable immediately in Three.js/R3F.",
     ].join(" "),
     inputSchema: SearchAssetsInputSchema,
   },
   list_animation_clips: {
     description: [
       "List all unique animation clip names available across animated assets.",
-      "Call this before search_assets to discover what motions exist.",
+      "Call this before search_assets when you need a specific motion (e.g. 'Gallop', 'Death') to confirm it exists.",
       "Optionally filter by category (e.g. 'Animals') to see clips for a specific asset type.",
     ].join(" "),
     inputSchema: ListClipsInputSchema,
   },
   list_categories: {
     description:
-      "List all asset categories with counts. Call this to understand what kinds of assets are available before searching.",
+      "List all asset categories with counts. Call this first to understand what kinds of assets are available before searching.",
     inputSchema: EmptyInputSchema,
   },
   get_asset: {
