@@ -60,6 +60,7 @@ export function searchAssetsTool(index: RuntimeIndex, args: unknown): ToolResult
       animatedOnly: input.animated_only,
       limit: input.limit,
       offset: input.offset,
+      ...(input.type !== undefined ? { type: input.type } : {}),
       ...(input.category !== undefined ? { category: input.category } : {}),
     });
     return {
@@ -121,12 +122,13 @@ const EmptyInputSchema = z.object({}).strict();
 export const TOOL_DEFINITIONS = {
   search_assets: {
     description: [
-      "Search free low-poly 3D assets from multiple creators (Quaternius, Kenney, etc.) by name, category, or animation.",
+      "Search free 3D assets and HDRIs from multiple sources (Quaternius, Kenney, Poly Haven, etc.) by name, category, or animation.",
+      "Asset types: 'model' (3D models as GLB/GLTF) and 'hdri' (environment maps as EXR). Use the type filter to narrow results.",
       "Uses BM25 ranking with Porter stemming — 'wolves' finds wolf, 'running' finds run.",
       "Supports semantic synonyms: 'run' finds Gallop/Sprint, 'attack' finds Bite/Slash/Punch, 'die' finds Death, 'hit' finds HitReact.",
       "Multi-word queries get a phrase boost when all terms appear in the title.",
       "If no exact match is found, returns partial results automatically.",
-      "Results include score, direct GLB download URLs, and animation clip names — usable immediately in Three.js/R3F.",
+      "Results include score, direct download URLs, and animation clip names — usable immediately in Three.js/R3F.",
     ].join(" "),
     inputSchema: SearchAssetsInputSchema,
   },
@@ -147,6 +149,8 @@ export const TOOL_DEFINITIONS = {
     description: [
       "Get full details for one specific asset by ID.",
       "Use after search_assets to confirm the exact download URL and animation clip names before using in code.",
+      "Returns bounds {x,y,z} (AABB extents in model-space units) and facing ('+x'/'-x'/'+z'/'-z', the direction the model's front surface faces) when available.",
+      "Use bounds and facing to record orientation in manifest descriptions, e.g. 'this fence extends along X axis (bounds.x=4.0 >> bounds.z=0.1, facing=+z)'.",
     ].join(" "),
     inputSchema: GetAssetInputSchema,
   },

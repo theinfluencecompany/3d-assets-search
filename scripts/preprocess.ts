@@ -76,13 +76,26 @@ function initR2Client(): boolean {
 
 // ─── Source schema ─────────────────────────────────────────────────────────────
 
+/** Accepts both legacy `polyPizzaUrl` and new `sourceUrl` field names. */
 const RawFileAssetSchema = RawAssetSchema.omit({ creator: true }).extend({
   animationClips: RawAssetSchema.shape.animationClips.default([]),
 });
 
+const NormalizeAsset = z.preprocess((val: unknown) => {
+  if (val && typeof val === "object") {
+    const obj = val as Record<string, unknown>;
+    // Migrate legacy polyPizzaUrl → sourceUrl
+    if ("polyPizzaUrl" in obj && !("sourceUrl" in obj)) {
+      const { polyPizzaUrl, ...rest } = obj;
+      return { ...rest, sourceUrl: polyPizzaUrl };
+    }
+  }
+  return val;
+}, RawFileAssetSchema);
+
 const RawFileIndexSchema = z.object({
   platform: z.string().default("restricted"),
-  assets: z.array(RawFileAssetSchema),
+  assets: z.array(NormalizeAsset),
 });
 
 type RawFileAsset = z.infer<typeof RawFileAssetSchema>;

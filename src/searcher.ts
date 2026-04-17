@@ -27,15 +27,19 @@ function toAssetResult(asset: ProcessedAsset, score: number): AssetResult {
     id: asset.id,
     title: asset.title,
     category: asset.category,
+    type: asset.type,
     animated: asset.animated,
     animationClips: asset.animationClips,
     download: asset.download,
-    polyPizzaUrl: asset.polyPizzaUrl,
+    sourceUrl: asset.sourceUrl,
     score: Math.round(score * 100) / 100,
+    ...(asset.bounds !== undefined ? { bounds: asset.bounds } : {}),
+    ...(asset.facing !== undefined ? { facing: asset.facing } : {}),
   };
 }
 
 interface SearchOptions {
+  type?: "model" | "hdri";
   animatedOnly: boolean;
   category?: string;
   limit: number;
@@ -65,6 +69,7 @@ export function searchAssets(
     })
     .filter((r): r is { asset: ProcessedAsset; score: number } => r !== null && r.score > 0)
     .filter(({ asset }) => {
+      if (options.type && asset.type !== options.type) return false;
       if (options.animatedOnly && !asset.animated) return false;
       if (
         options.category &&

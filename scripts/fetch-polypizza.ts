@@ -60,7 +60,7 @@ interface SourceAsset {
   triCount: number;
   thumbnail: string;
   download: string;
-  polyPizzaUrl: string;
+  sourceUrl: string;
 }
 
 // ─── Retry fetch ───────────────────────────────────────────────────────────────
@@ -205,7 +205,7 @@ async function fetchAllModelsOldApi(username: string, apiKey: string): Promise<S
     triCount: 0,
     thumbnail: m.previewUrl,
     download: m.previewUrl.replace(/\.webp$/, ".glb"),
-    polyPizzaUrl: `https://poly.pizza${m.url}`,
+    sourceUrl: `https://poly.pizza${m.url}`,
   }));
 }
 
@@ -347,7 +347,7 @@ async function fetchCreator(username: string, apiKey: string): Promise<void> {
       triCount: m["Tri Count"],
       thumbnail: m.Thumbnail,
       download: m.Download,
-      polyPizzaUrl: `https://poly.pizza/m/${m.ID}`,
+      sourceUrl: `https://poly.pizza/m/${m.ID}`,
     }));
   } catch (v1Err) {
     console.warn(

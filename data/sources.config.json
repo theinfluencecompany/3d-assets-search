@@ -9,8 +9,12 @@
         "J-Toastie",
         "MilkAndBanana",
         "Pichuliru",
-        "Poly by Google"
+        "Poly by Google",
+        "Kay Lousberg"
       ]
+    },
+    "polyhaven": {
+      "access": "open"
     },
     "restricted": {
       "access": "restricted",

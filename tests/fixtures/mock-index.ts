@@ -12,7 +12,7 @@ const WOLF: ProcessedAsset = {
   triCount: 1200,
   thumbnail: "https://example.com/wolf.png",
   download: "https://example.com/wolf.glb",
-  polyPizzaUrl: "https://poly.pizza/wolf",
+  sourceUrl: "https://poly.pizza/wolf",
   titleTokens: ["wolf"],
   tokenWeights: { wolf: 10, anim: 5, run: 3, idl: 3, attack: 3 },
 };
@@ -29,7 +29,7 @@ const TREE: ProcessedAsset = {
   triCount: 500,
   thumbnail: "https://example.com/tree.png",
   download: "https://example.com/tree.glb",
-  polyPizzaUrl: "https://poly.pizza/tree",
+  sourceUrl: "https://poly.pizza/tree",
   titleTokens: ["pine", "tree"],
   tokenWeights: { pine: 10, tree: 7, natur: 5 },
 };

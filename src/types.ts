@@ -1,12 +1,25 @@
 import { z } from "zod";
 
+// ─── Shared geometry / orientation types ─────────────────────────────────────
+
+export const BoundsSchema = z.object({ x: z.number(), y: z.number(), z: z.number() });
+export type Bounds = z.infer<typeof BoundsSchema>;
+
+/** Which direction the model's front surface faces in its local coordinate space. */
+export const ThreeDFacingSchema = z.enum(["+x", "-x", "+z", "-z"]);
+export type ThreeDFacing = z.infer<typeof ThreeDFacingSchema>;
+
 // ─── Raw JSON index shape ─────────────────────────────────────────────────────
+
+export const AssetTypeSchema = z.enum(["model", "hdri"]);
+export type AssetType = z.infer<typeof AssetTypeSchema>;
 
 export const RawAssetSchema = z.object({
   id: z.string(),
   title: z.string(),
   creator: z.string(),
   category: z.string(),
+  type: AssetTypeSchema.default("model"),
   tags: z.array(z.string()),
   styleTags: z.array(z.string()).default([]),
   animated: z.boolean(),
@@ -15,7 +28,11 @@ export const RawAssetSchema = z.object({
   triCount: z.number(),
   thumbnail: z.string(),
   download: z.string(),
-  polyPizzaUrl: z.string(),
+  sourceUrl: z.string(),
+  /** AABB extents in model units, extracted from GLB accessor min/max. */
+  bounds: BoundsSchema.optional(),
+  /** Dominant surface facing direction, determined via Gemini Vision on thumbnail. */
+  facing: ThreeDFacingSchema.optional(),
 });
 
 export const RawIndexSchema = z.object({
@@ -60,6 +77,7 @@ export interface RuntimeIndex extends PreprocessedIndex {
 
 export const SearchAssetsInputSchema = z.object({
   query: z.string().min(1),
+  type: AssetTypeSchema.optional(),
   animated_only: z.boolean().default(false),
   category: z.string().optional(),
   limit: z.number().int().min(1).max(20).default(8),
@@ -84,11 +102,14 @@ export type AssetResult = {
   readonly id: string;
   readonly title: string;
   readonly category: string;
+  readonly type: AssetType;
   readonly animated: boolean;
   readonly animationClips: readonly string[];
   readonly download: string;
-  readonly polyPizzaUrl: string;
+  readonly sourceUrl: string;
   readonly score: number;
+  readonly bounds?: Bounds;
+  readonly facing?: ThreeDFacing;
 };
 
 export interface SearchResults {

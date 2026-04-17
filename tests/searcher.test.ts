@@ -63,7 +63,7 @@ describe("searchAssets", () => {
       triCount: 100,
       thumbnail: "",
       download: "",
-      polyPizzaUrl: "",
+      sourceUrl: "",
       titleTokens: ["asset"],
       tokenWeights: { test: 10 - i },
     }));

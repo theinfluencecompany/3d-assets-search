@@ -3,10 +3,13 @@
  * Analyzes asset thumbnails and writes descriptive style tags to source JSONs.
  * Already-tagged assets are skipped (cached).
  *
+ * Also extracts facing direction (+x/-x/+z/-z) via a second prompt in the same API call.
+ *
  * Usage:
- *   bun scripts/tag-style.ts                     # tag all untagged assets
- *   bun scripts/tag-style.ts Quaternius           # only process one creator
- *   bun scripts/tag-style.ts --force Quaternius   # re-tag even already-tagged assets
+ *   bun scripts/tag-style.ts                          # tag all untagged assets
+ *   bun scripts/tag-style.ts Quaternius               # only process one creator
+ *   bun scripts/tag-style.ts --force Quaternius       # re-tag style + facing
+ *   bun scripts/tag-style.ts --force-facing           # re-tag facing only
  *
  * Env: GEMINI_API_KEY (required)
  */
@@ -37,11 +40,16 @@ function allCreators(config: SourcesConfig): string[] {
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
+type ThreeDFacing = "+x" | "-x" | "+z" | "-z";
+const VALID_FACINGS = new Set<string>(["+x", "-x", "+z", "-z"]);
+
 interface SourceAsset {
   id: string;
   title: string;
   thumbnail: string;
   styleTags: string[];
+  facing?: ThreeDFacing;
+  bounds?: { x: number; y: number; z: number };
   [key: string]: unknown;
 }
 
@@ -56,6 +64,13 @@ const STYLE_PROMPT = `Look at this 3D game asset render.
 Return 3-5 descriptive tags that best capture its visual style, art direction, and overall aesthetic.
 Include style terms (e.g. chibi, low-poly, cartoon, realistic, voxel) AND visual characteristics (e.g. rounded, blocky, colorful, dark, cute, rugged, sleek).
 Reply with only the tags, comma-separated, lowercase.`;
+
+const FACING_PROMPT = `Look at this 3D game asset render. Determine which direction the front of this object faces relative to the camera.
++z = front faces toward camera (you see the front/face directly)
+-z = front faces away from camera (you see the back)
++x = front faces to the right
+-x = front faces to the left
+Reply with exactly one token: +z, -z, +x, or -x. No other text.`;
 
 async function fetchWithRetry(url: string, init: RequestInit, retries = 3): Promise<Response> {
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -79,13 +94,44 @@ async function fetchWithRetry(url: string, init: RequestInit, retries = 3): Prom
   throw new Error("unreachable");
 }
 
-async function getStyleTags(thumbnailUrl: string, apiKey: string): Promise<string[]> {
+interface AssetVisionResult {
+  styleTags: string[];
+  facing: ThreeDFacing | undefined;
+}
+
+async function getAssetVisionData(
+  thumbnailUrl: string,
+  apiKey: string,
+  needStyle: boolean,
+  needFacing: boolean,
+  bounds?: { x: number; y: number; z: number },
+): Promise<AssetVisionResult> {
   const imgRes = await fetchWithRetry(thumbnailUrl, {});
-  if (!imgRes.ok) return [];
+  if (!imgRes.ok) return { styleTags: [], facing: undefined };
 
   const rawType = imgRes.headers.get("content-type") ?? "";
   const contentType = rawType.startsWith("image/") ? rawType : "image/webp";
   const base64 = Buffer.from(await imgRes.arrayBuffer()).toString("base64");
+
+  // Build prompts — image is shared, append only the prompts we need.
+  // Each prompt is a separate text part; Gemini responds to each in order.
+  const parts: Array<{ inline_data?: { mime_type: string; data: string }; text?: string }> = [
+    { inline_data: { mime_type: contentType, data: base64 } },
+  ];
+  if (needStyle) parts.push({ text: STYLE_PROMPT });
+  if (needFacing) {
+    let facingPrompt = FACING_PROMPT;
+    if (bounds) {
+      const axes = [
+        ["X", bounds.x],
+        ["Y", bounds.y],
+        ["Z", bounds.z],
+      ] as const;
+      const longest = axes.reduce((a, b) => (b[1] > a[1] ? b : a));
+      facingPrompt = `This model's bounding box extents: X=${bounds.x}, Y=${bounds.y}, Z=${bounds.z} (longest axis: ${longest[0]}).\n${FACING_PROMPT}`;
+    }
+    parts.push({ text: facingPrompt });
+  }
 
   const res = await fetchWithRetry(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
@@ -93,15 +139,8 @@ async function getStyleTags(thumbnailUrl: string, apiKey: string): Promise<strin
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { inline_data: { mime_type: contentType, data: base64 } },
-              { text: STYLE_PROMPT },
-            ],
-          },
-        ],
-        generationConfig: { temperature: 0.2, maxOutputTokens: 64 },
+        contents: [{ parts }],
+        generationConfig: { temperature: 0.2, maxOutputTokens: 128 },
       }),
     },
   );
@@ -114,16 +153,49 @@ async function getStyleTags(thumbnailUrl: string, apiKey: string): Promise<strin
   const data = (await res.json()) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
   };
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  return text
-    .split(",")
-    .map((t) => t.trim().toLowerCase())
-    .filter((t) => t.length > 0 && t.split(" ").length <= 2);
+
+  // Gemini returns a single merged text response (not one part per prompt).
+  // Split on newlines to separate style tags line from facing line.
+  const fullText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  const lines = fullText
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  let styleTags: string[] = [];
+  let facing: ThreeDFacing | undefined;
+
+  if (needStyle && needFacing) {
+    // First non-empty line(s) are style tags (comma-separated), last token line is facing.
+    const facingLine = [...lines].reverse().find((l: string) => VALID_FACINGS.has(l));
+    const styleLines = lines.filter((l) => !VALID_FACINGS.has(l));
+    styleTags = styleLines
+      .join(",")
+      .split(",")
+      .map((t) => t.trim().toLowerCase())
+      .filter((t) => t.length > 0 && t.split(" ").length <= 2);
+    facing = facingLine as ThreeDFacing | undefined;
+  } else if (needStyle) {
+    styleTags = fullText
+      .split(",")
+      .map((t) => t.trim().toLowerCase())
+      .filter((t) => t.length > 0 && t.split(" ").length <= 2);
+  } else if (needFacing) {
+    const token = lines.find((l) => VALID_FACINGS.has(l));
+    facing = token as ThreeDFacing | undefined;
+  }
+
+  return { styleTags, facing };
 }
 
 // ─── Process one creator ────────────────────────────────────────────────────────
 
-async function tagCreator(creatorFile: string, force: boolean, apiKey: string): Promise<void> {
+async function tagCreator(
+  creatorFile: string,
+  forceStyle: boolean,
+  forceFacing: boolean,
+  apiKey: string,
+): Promise<void> {
   const filePath = join(SOURCES_DIR, creatorFile);
   if (!existsSync(filePath)) {
     console.log(`⚠️  ${creatorFile} not found — skipping`);
@@ -131,34 +203,51 @@ async function tagCreator(creatorFile: string, force: boolean, apiKey: string): 
   }
 
   const data = JSON.parse(readFileSync(filePath, "utf8")) as SourceFile;
-  const toTag = force
-    ? data.assets
-    : data.assets.filter((a) => !a.styleTags || a.styleTags.length === 0);
 
-  if (toTag.length === 0) {
+  // Skip HDRIs — they don't need vision-based style tagging
+  const models = data.assets.filter((a) => (a as { type?: string }).type !== "hdri");
+
+  // Determine which assets need each kind of annotation
+  const needsStyle = (a: SourceAsset) => forceStyle || !a.styleTags || a.styleTags.length === 0;
+  const needsFacing = (a: SourceAsset) => forceFacing || !a.facing;
+  const toProcess = models.filter((a) => needsStyle(a) || needsFacing(a));
+
+  if (toProcess.length === 0) {
     console.log(`✅ ${creatorFile}: all ${data.assets.length} assets already tagged`);
     return;
   }
 
-  console.log(`\n🏷️  ${creatorFile}: tagging ${toTag.length}/${data.assets.length} assets...`);
+  console.log(
+    `\n🏷️  ${creatorFile}: processing ${toProcess.length}/${data.assets.length} assets...`,
+  );
 
-  const tagMap = new Map<string, string[]>(data.assets.map((a) => [a.id, a.styleTags ?? []]));
+  const styleMap = new Map<string, string[]>(data.assets.map((a) => [a.id, a.styleTags ?? []]));
+  const facingMap = new Map<string, ThreeDFacing | undefined>(
+    data.assets.map((a) => [a.id, a.facing]),
+  );
 
   let done = 0;
   let failed = 0;
 
-  for (let i = 0; i < toTag.length; i += CONCURRENCY) {
-    const batch = toTag.slice(i, i + CONCURRENCY);
+  for (let i = 0; i < toProcess.length; i += CONCURRENCY) {
+    const batch = toProcess.slice(i, i + CONCURRENCY);
     await Promise.all(
       batch.map(async (asset) => {
         try {
-          const tags = await getStyleTags(asset.thumbnail, apiKey);
-          tagMap.set(asset.id, tags);
+          const result = await getAssetVisionData(
+            asset.thumbnail,
+            apiKey,
+            needsStyle(asset),
+            needsFacing(asset),
+            asset.bounds,
+          );
+          if (result.styleTags.length > 0) styleMap.set(asset.id, result.styleTags);
+          if (result.facing) facingMap.set(asset.id, result.facing);
         } catch {
           failed++;
         }
         done++;
-        process.stdout.write(`  [${done}/${toTag.length}] ${asset.title}   \r`);
+        process.stdout.write(`  [${done}/${toProcess.length}] ${asset.title}   \r`);
       }),
     );
   }
@@ -166,13 +255,21 @@ async function tagCreator(creatorFile: string, force: boolean, apiKey: string): 
   // Write back
   const updated: SourceFile = {
     ...data,
-    assets: data.assets.map((a) => ({ ...a, styleTags: tagMap.get(a.id) ?? a.styleTags ?? [] })),
+    assets: data.assets.map((a) => {
+      const facing = facingMap.get(a.id);
+      return {
+        ...a,
+        styleTags: styleMap.get(a.id) ?? a.styleTags ?? [],
+        ...(facing ? { facing } : {}),
+      };
+    }),
   };
   writeFileSync(filePath, JSON.stringify(updated, null, 2));
 
-  const tagged = updated.assets.filter((a) => a.styleTags.length > 0).length;
+  const withStyle = updated.assets.filter((a) => a.styleTags.length > 0).length;
+  const withFacing = updated.assets.filter((a) => a.facing).length;
   console.log(
-    `\n✅ ${creatorFile}: ${tagged}/${data.assets.length} total tagged${failed > 0 ? ` (${failed} failed)` : ""}`,
+    `\n✅ ${creatorFile}: ${withStyle}/${data.assets.length} styled, ${withFacing}/${data.assets.length} with facing${failed > 0 ? ` (${failed} failed)` : ""}`,
   );
 }
 
@@ -186,8 +283,9 @@ async function main() {
   }
 
   const args = process.argv.slice(2);
-  const force = args.includes("--force");
-  const creatorArg = args.find((a) => a !== "--force");
+  const forceStyle = args.includes("--force");
+  const forceFacing = args.includes("--force-facing") || forceStyle;
+  const creatorArg = args.find((a) => !a.startsWith("--"));
 
   const config = loadConfig();
 
@@ -203,7 +301,12 @@ async function main() {
   }
 
   for (const creator of creators) {
-    await tagCreator(`${creator.toLowerCase().replace(/\s+/g, "-")}.json`, force, apiKey);
+    await tagCreator(
+      `${creator.toLowerCase().replace(/\s+/g, "-")}.json`,
+      forceStyle,
+      forceFacing,
+      apiKey,
+    );
   }
 
   console.log("\n🎉 Done. Run `bun run preprocess` to rebuild the index.");
