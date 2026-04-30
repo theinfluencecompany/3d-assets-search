@@ -21,18 +21,14 @@ export const RawAssetSchema = z.object({
   category: z.string(),
   type: AssetTypeSchema.default("model"),
   tags: z.array(z.string()),
-  styleTags: z.array(z.string()).default([]),
   animated: z.boolean(),
   animationClips: z.array(z.string()),
   license: z.string(),
   triCount: z.number(),
   thumbnail: z.string(),
   download: z.string(),
+  downloadIncludes: z.record(z.string(), z.string()).optional(),
   sourceUrl: z.string(),
-  /** AABB extents in model units, extracted from GLB accessor min/max. */
-  bounds: BoundsSchema.optional(),
-  /** Dominant surface facing direction, determined via Gemini Vision on thumbnail. */
-  facing: ThreeDFacingSchema.optional(),
 });
 
 export const RawIndexSchema = z.object({
@@ -41,9 +37,87 @@ export const RawIndexSchema = z.object({
 
 export type RawAsset = z.infer<typeof RawAssetSchema>;
 
+export const PrepareStrategySchema = z.enum(["passthrough", "upload-glb", "polyhaven-gltf-pack"]);
+export type PrepareStrategy = z.infer<typeof PrepareStrategySchema>;
+
+export const PreparedAssetStatusSchema = z.enum(["uploaded", "passthrough", "skipped", "failed"]);
+export type PreparedAssetStatus = z.infer<typeof PreparedAssetStatusSchema>;
+
+export const PreparedAssetEntrySchema = z.object({
+  assetId: z.string(),
+  sourceFile: z.string(),
+  sourcePlatform: z.string(),
+  sourceType: AssetTypeSchema,
+  strategy: PrepareStrategySchema,
+  prepareSignature: z.string(),
+  status: PreparedAssetStatusSchema,
+  sourceDownload: z.string(),
+  preparedFormat: z.enum(["glb", "source"]),
+  preparedKey: z.string().nullable().optional(),
+  preparedUrl: z.string(),
+  preparedAt: z.string().optional(),
+  error: z.string().nullable().optional(),
+});
+export type PreparedAssetEntry = z.infer<typeof PreparedAssetEntrySchema>;
+
+export const PreparedAssetsManifestSchema = z.object({
+  version: z.number().int().default(1),
+  updatedAt: z.string(),
+  assets: z.record(z.string(), PreparedAssetEntrySchema),
+});
+export type PreparedAssetsManifest = z.infer<typeof PreparedAssetsManifestSchema>;
+
+export const BoundsAssetStatusSchema = z.enum(["computed", "skipped", "failed"]);
+export type BoundsAssetStatus = z.infer<typeof BoundsAssetStatusSchema>;
+
+export const BoundsAssetEntrySchema = z.object({
+  assetId: z.string(),
+  sourceFile: z.string(),
+  boundsSignature: z.string(),
+  status: BoundsAssetStatusSchema,
+  bounds: BoundsSchema.optional(),
+  computedAt: z.string().optional(),
+  error: z.string().nullable().optional(),
+});
+export type BoundsAssetEntry = z.infer<typeof BoundsAssetEntrySchema>;
+
+export const BoundsManifestSchema = z.object({
+  version: z.number().int().default(1),
+  updatedAt: z.string(),
+  assets: z.record(z.string(), BoundsAssetEntrySchema),
+});
+export type BoundsManifest = z.infer<typeof BoundsManifestSchema>;
+
+export const TaggedAssetStatusSchema = z.enum(["tagged", "skipped", "failed"]);
+export type TaggedAssetStatus = z.infer<typeof TaggedAssetStatusSchema>;
+
+export const TaggedAssetEntrySchema = z.object({
+  assetId: z.string(),
+  sourceFile: z.string(),
+  tagSignature: z.string(),
+  status: TaggedAssetStatusSchema,
+  model: z.string(),
+  promptVersion: z.string(),
+  styleTags: z.array(z.string()).default([]),
+  facing: ThreeDFacingSchema.optional(),
+  taggedAt: z.string().optional(),
+  error: z.string().nullable().optional(),
+});
+export type TaggedAssetEntry = z.infer<typeof TaggedAssetEntrySchema>;
+
+export const TaggedAssetsManifestSchema = z.object({
+  version: z.number().int().default(1),
+  updatedAt: z.string(),
+  assets: z.record(z.string(), TaggedAssetEntrySchema),
+});
+export type TaggedAssetsManifest = z.infer<typeof TaggedAssetsManifestSchema>;
+
 // ─── Preprocessed index (built once by preprocess.ts, loaded at startup) ─────
 
 export const ProcessedAssetSchema = RawAssetSchema.extend({
+  styleTags: z.array(z.string()).default([]),
+  bounds: BoundsSchema.optional(),
+  facing: ThreeDFacingSchema.optional(),
   /** token → BM25 score pre-baked at index build time */
   tokenWeights: z.record(z.string(), z.number()),
   /** stemmed title tokens for phrase boost detection */

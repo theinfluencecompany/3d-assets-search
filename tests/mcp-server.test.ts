@@ -20,8 +20,9 @@ async function startTestServer() {
 }
 
 function textOf(result: Awaited<ReturnType<Client["callTool"]>>): string {
-  const first = result.content[0];
+  const first = (result.content as Array<{ type?: string; text?: string }>)[0];
   if (!first || first.type !== "text") throw new Error("Expected text content");
+  if (!first.text) throw new Error("Expected text payload");
   return first.text;
 }
 

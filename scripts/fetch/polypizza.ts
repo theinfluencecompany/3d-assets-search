@@ -4,8 +4,10 @@
  * Existing source files are used as a cache to skip already-fetched clips.
  *
  * Usage:
- *   bun scripts/fetch-polypizza.ts              # fetch all missing creators from config
- *   bun scripts/fetch-polypizza.ts <Username>   # fetch/refresh one specific creator
+ *   bun scripts/fetch/polypizza.ts              # fetch all missing creators from config
+ *   bun scripts/fetch/polypizza.ts --force      # re-fetch all configured creators
+ *   bun scripts/fetch/polypizza.ts <Username>   # fetch/refresh one specific creator
+ *   bun scripts/fetch/polypizza.ts --force <Username>
  *
  * Env: POLY_PIZZA_API_KEY (required)
  */
@@ -14,7 +16,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SOURCES_DIR = join(ROOT, "data", "sources");
 const SOURCES_CONFIG_FILE = join(ROOT, "data", "sources.config.json");
 const API_BASE = "https://api.poly.pizza/v1.1";
@@ -23,7 +25,7 @@ const CONCURRENCY = 10;
 // ─── Config ────────────────────────────────────────────────────────────────────
 
 interface SourcesConfig {
-  platforms: Record<string, { access: string; creators?: string[] }>;
+  platforms: Record<string, { creators?: string[] }>;
 }
 
 function loadConfig(): SourcesConfig {
@@ -51,9 +53,10 @@ interface ApiModel {
 interface SourceAsset {
   id: string;
   title: string;
+  creator: string;
   category: string;
+  type: "model";
   tags: string[];
-  styleTags: string[];
   animated: boolean;
   animationClips: string[];
   license: string;
@@ -196,9 +199,10 @@ async function fetchAllModelsOldApi(username: string, apiKey: string): Promise<S
   return models.map((m) => ({
     id: m.publicID,
     title: m.title,
+    creator: username,
     category: "",
+    type: "model",
     tags: [],
-    styleTags: [],
     animated: false, // unknown — will be set to true if GLB contains animations
     animationClips: [],
     license: m.licence,
@@ -214,7 +218,6 @@ async function fetchAllModelsOldApi(username: string, apiKey: string): Promise<S
 async function fetchAndExtractClips(
   assets: SourceAsset[],
   cachedClips: Map<string, string[]>,
-  cachedStyleTags: Map<string, string[]>,
 ): Promise<SourceAsset[]> {
   // For v1.1: only fetch clips for assets marked Animated
   // For old API: fetch clips for ALL assets (Animated field unknown), use result to set animated
@@ -223,7 +226,6 @@ async function fetchAndExtractClips(
   if (needsGlb.length === 0) {
     return assets.map((a) => ({
       ...a,
-      styleTags: cachedStyleTags.get(a.id) ?? a.styleTags,
       animationClips: cachedClips.get(a.id) ?? a.animationClips,
     }));
   }
@@ -251,7 +253,6 @@ async function fetchAndExtractClips(
     const animationClips = clips.get(a.id) ?? a.animationClips;
     return {
       ...a,
-      styleTags: cachedStyleTags.get(a.id) ?? a.styleTags,
       animated: a.animated || animationClips.length > 0,
       animationClips,
     };
@@ -263,16 +264,12 @@ async function fetchCreator(username: string, apiKey: string): Promise<void> {
 
   // Load existing clips as cache to avoid re-fetching
   const cachedClips = new Map<string, string[]>();
-  const cachedStyleTags = new Map<string, string[]>();
   if (existsSync(outFile)) {
     const existing = JSON.parse(readFileSync(outFile, "utf8")) as { assets?: SourceAsset[] };
     for (const asset of existing.assets ?? []) {
       if (asset.animationClips.length > 0) cachedClips.set(asset.id, asset.animationClips);
-      if (asset.styleTags?.length > 0) cachedStyleTags.set(asset.id, asset.styleTags);
     }
-    console.log(
-      `📦 Cache: ${cachedClips.size} assets with clips, ${cachedStyleTags.size} with style tags`,
-    );
+    console.log(`📦 Cache: ${cachedClips.size} assets with clips`);
   }
 
   console.log(`🌐 Fetching models for ${username}...`);
@@ -291,9 +288,8 @@ async function fetchCreator(username: string, apiKey: string): Promise<void> {
           );
           const rawAssets = oldAssets.map((a) => ({
             ...a,
-            styleTags: cachedStyleTags.get(a.id) ?? [],
           }));
-          assets = await fetchAndExtractClips(rawAssets, cachedClips, cachedStyleTags);
+          assets = await fetchAndExtractClips(rawAssets, cachedClips);
           writeFileSync(outFile, JSON.stringify({ platform: "poly.pizza", assets }, null, 2));
           const animatedCount = assets.filter((a) => a.animated).length;
           const withClips = assets.filter((a) => a.animationClips.length > 0).length;
@@ -338,9 +334,10 @@ async function fetchCreator(username: string, apiKey: string): Promise<void> {
     assets = models.map((m) => ({
       id: m.ID,
       title: m.Title,
+      creator: username,
       category: m.Category,
+      type: "model",
       tags: m.Tags ?? [],
-      styleTags: cachedStyleTags.get(m.ID) ?? [],
       animated: m.Animated,
       animationClips: clips.get(m.ID) ?? [],
       license: m.Licence,
@@ -356,7 +353,7 @@ async function fetchCreator(username: string, apiKey: string): Promise<void> {
     try {
       const rawAssets = await fetchAllModelsOldApi(username, apiKey);
       console.log(`\n✅ ${rawAssets.length} models (old API — category/tags/triCount unavailable)`);
-      assets = await fetchAndExtractClips(rawAssets, cachedClips, cachedStyleTags);
+      assets = await fetchAndExtractClips(rawAssets, cachedClips);
     } catch (oldErr) {
       throw new Error(
         `Both APIs failed. Old API: ${oldErr instanceof Error ? oldErr.message : oldErr}`,
@@ -381,13 +378,14 @@ async function main() {
     process.exit(1);
   }
 
-  const usernameArg = process.argv[2];
+  const force = process.argv.includes("--force");
+  const usernameArg = process.argv.slice(2).find((arg) => !arg.startsWith("--"));
 
   if (usernameArg) {
     // Fetch a single specified creator
     await fetchCreator(usernameArg, apiKey);
   } else {
-    // Fetch all poly.pizza creators from config that don't yet have a source file
+    // Fetch all poly.pizza creators from config, optionally forcing refresh.
     const config = loadConfig();
     const creators = polyPizzaCreators(config);
 
@@ -396,18 +394,22 @@ async function main() {
       return;
     }
 
-    const missing = creators.filter(
-      (c) => !existsSync(join(SOURCES_DIR, `${c.toLowerCase().replace(/\s+/g, "-")}.json`)),
-    );
+    const missing = force
+      ? creators
+      : creators.filter(
+          (c) => !existsSync(join(SOURCES_DIR, `${c.toLowerCase().replace(/\s+/g, "-")}.json`)),
+        );
 
     if (missing.length === 0) {
       console.log(
-        `✅ All ${creators.length} creators already fetched. Use a username arg to refresh one.`,
+        `✅ All ${creators.length} creators already fetched. Use --force to refresh all, or pass a username to refresh one.`,
       );
       return;
     }
 
-    console.log(`📋 ${missing.length} creator(s) to fetch: ${missing.join(", ")}\n`);
+    console.log(
+      `📋 ${missing.length} creator(s) to fetch${force ? " (force)" : ""}: ${missing.join(", ")}\n`,
+    );
     const failed: string[] = [];
     for (const creator of missing) {
       console.log(`\n${"─".repeat(50)}`);

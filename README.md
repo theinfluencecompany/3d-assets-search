@@ -5,69 +5,112 @@ Returns direct download URLs (GLB/GLTF for models, EXR for HDRIs) usable immedia
 
 ## Architecture
 
+This repository is transitioning from a single-step `preprocess` pipeline to a staged asset pipeline. The sections below describe the target architecture that the codebase is moving toward, while the current implementation still contains some legacy responsibilities inside `scripts/preprocess/index.ts`.
+
+### Update model
+
+Two update models were considered:
+
+1. Full scan + incremental execution
+   - On each run, scan all current source assets
+   - Recompute per-asset signatures
+   - Compare against stage JSON state
+   - Only execute expensive work for changed assets
+
+2. Event-driven / database-style fine-grained updates
+   - Treat each asset change as an explicit insert / update / delete event
+   - Prepare / bounds / tag react only to affected assets
+   - Requires a trusted change journal, mutation API, or database revision model
+
+The current target architecture chooses the first model because the repository is still file-driven (`sources/*.json`) rather than event-driven. Full scans are cheap at the current scale; repeated downloads, conversions, uploads, and vision calls are the real cost centers.
+
 ### Data pipeline
 
 ```
-poly.pizza API                        GLB files (static.poly.pizza)
-  v1.1: /v1.1/user/{creator}               /{uuid}.glb
-    → paginated 32/page                        │
-    → cycle detection (API loops on overflow)  │  Range: bytes=0-19   → JSON chunk length
-    → user.lists[] → /v1.1/list/{id}           │  Range: bytes=20-N   → animations[].name
-  fallback: poly.pizza/api/user/{creator}       │
-    → if v1.1 returns 500 (server bug)         │
-    → category/tags/triCount unavailable        │
-    → GLB checked for ALL assets (animated unknown)
-        │                                      │
-        │   scripts/fetch-polypizza.ts          │
-        └──────────────┬───────────────────────┘
-                       │
-                       │
-Poly Haven API         │
-  /assets?t=models     │   ~433 3D models (GLTF, CC0)
-  /assets?t=hdris      │   ~959 HDRIs (EXR, CC0)
-  /files/{id}          │   download URLs per resolution
-        │              │
-        │   scripts/fetch-polyhaven.ts
-        └──────┬───────┘
-               │
-               ▼
-      data/sources/{creator}.json
-      { assets: [{ id, title, type, category, tags,
-                   styleTags, animated, animationClips,
-                   license, triCount,
-                   thumbnail, download, sourceUrl,
-                   bounds?, facing? }] }
-               │
-               │   scripts/extract-bounds.ts
-               │   GLB Range requests → AABB min/max → bounds {x,y,z}
-               │   (poly.pizza models only — Poly Haven has API bounds)
-               │   (skips HDRIs and assets with existing bounds)
-               │
-               │   scripts/tag-style.ts
-               │   Gemini Vision API → thumbnail + bounds context → styleTags + facing
-               │   (models only — HDRIs skipped)
-               │   cached: assets with styleTags/facing skipped
-               │
-               │   data/sources.config.json
-               │   (platform → access mode)
-               │
-               │   scripts/preprocess.ts
-               ▼
-      BM25 index build (two passes):
-        Pass 1 — weighted TF + docLength per asset
-        Pass 2 — IDF per token, BM25 tokenWeights
-      + invertedIndex  (token → [assetId])
-      + titleTokens    (stemmed title, for phrase boost)
-      + allClips       (all unique animation clip names)
-               │
-               ▼
-      data/asset-search-preprocessed.json
-               │
-      loaded once at startup
-               │
-               ▼
-      RuntimeIndex (in-memory)
-      + assetById Map<id, ProcessedAsset>
+data/sources.config.json
+  producer: engineer
+  consumers: scripts/fetch/*, scripts/prepare/*, scripts/bounds/*, scripts/tag/*
+        │
+        ▼
+scripts/fetch/polyhaven.ts
+scripts/fetch/polypizza.ts
+  producers: data/sources/*.json
+  output: source facts only
+    - metadata
+    - source download URL
+    - downloadIncludes (when available)
+    - thumbnail
+    - sourceUrl
+    - animated / clips
+        │
+        ▼
+data/sources/*.json
+  producer: fetch scripts
+  consumers: prepare / bounds / tag / preprocess
+        │
+        ▼
+scripts/prepare/*
+  input: sources/*.json
+  output:
+    - data/manifests/prepared-assets.json
+    - R2 objects ({id}.glb)
+  rules:
+    - models only
+    - prefer ZIP
+    - fallback to glTF + downloadIncludes
+    - HDRIs stay on source URLs
+        │
+        ├──────────────► Cloudflare R2
+        │                 producer: prepare
+        │                 consumer: src/worker.ts (/files/{id}.glb)
+        │
+        ▼
+data/manifests/prepared-assets.json
+  producer: prepare
+  consumer: bounds / tag / preprocess
+  contains:
+    - prepareSignature
+    - status
+    - preparedUrl
+    - preparedKey
+        │
+        ▼
+scripts/bounds/index.ts
+  input: prepared-assets.json
+  output: data/manifests/bounds.json
+  rule: compute bounds from prepared, directly accessible model URLs
+        │
+        ▼
+scripts/tag/index.ts
+  input: sources/*.json + bounds.json
+  output: data/manifests/tagged-assets.json
+  rule: Gemini Vision tags thumbnail; facing may use bounds context
+        │
+        ▼
+scripts/preprocess/index.ts
+  inputs:
+    - data/sources/*.json
+    - data/manifests/prepared-assets.json
+    - data/manifests/bounds.json
+    - data/manifests/tagged-assets.json
+  integration key: asset id
+  output:
+    - final merged asset view
+    - BM25 index
+    - invertedIndex
+    - titleTokens
+    - allClips
+        │
+        ▼
+data/asset-search-preprocessed.json
+        │
+        ▼
+src/mcp-server.ts / src/worker.ts
+  consumers: local MCP clients / remote HTTP MCP clients
+  search output:
+    id, title, category, type, animated,
+    animationClips, download, thumbnail, sourceUrl,
+    score, bounds?, facing?
 ```
 
 ### Query pipeline
@@ -154,10 +197,10 @@ One-directional expansion — applied to raw query tokens before stemming:
 
 Each model's thumbnail is analyzed by Gemini Vision to generate 3–5 style tags (e.g. `chibi`, `low-poly`, `cartoon`, `realistic`, `ornate`).
 The facing prompt also receives bounding box dimensions when available, helping Gemini determine orientation from geometry (e.g. a long thin model along X likely faces +z/-z).
-These `styleTags` are stored in the source JSON and indexed at the same weight as creator tags (4).
+In the target architecture these `styleTags` and `facing` values live in `data/manifests/tagged-assets.json` and are merged during `preprocess`.
 This lets queries like "chibi character" or "realistic furniture" find assets that creators never explicitly tagged as such.
 
-Tags are generated once and cached — re-runs only process new untagged assets. HDRIs are skipped (no visual style tagging needed).
+Tags are generated incrementally. Each asset records a `tagSignature` derived from thumbnail, bounds, prompt version, and vision model; re-runs only process assets whose inputs changed. HDRIs are skipped.
 
 ### Phrase boost
 
@@ -206,24 +249,36 @@ bun run fetch:polypizza Quaternius  # fetch/refresh one specific creator
 Poly Haven fetch requires no API key (open access). poly.pizza fetch requires `POLY_PIZZA_API_KEY`.
 Existing data is cached — re-runs skip already-fetched sources. Use `--force` to refresh.
 
-### 4. Extract bounds + tag styles
+### 4. Prepare accessible assets
 
 ```bash
-bun run bounds                  # extract AABB from GLBs (poly.pizza models only, incremental)
-bun run tag                     # Gemini vision tagging (models only, incremental)
-bun run tag polyhaven           # tag one source only
+bun run prepare                # normalize model formats + upload GLBs to R2
 ```
 
-### 5. Build the search index
+### 5. Extract bounds + tag styles
+
+```bash
+bun run bounds                 # compute AABB bounds from prepared, accessible models
+bun run tag                    # Gemini vision tagging (models only, incremental)
+bun run tag polyhaven          # tag one source only
+```
+
+### 6. Build the search index
 
 ```bash
 bun run preprocess
 ```
 
-Reads all `data/sources/*.json` → applies BM25 → writes `data/asset-search-preprocessed.json`.
-Open-access sources keep their CDN URLs as-is. Restricted sources upload GLBs to R2.
+Reads and integrates:
 
-### 6. Run locally
+- `data/sources/*.json`
+- `data/manifests/prepared-assets.json`
+- `data/manifests/bounds.json`
+- `data/manifests/tagged-assets.json`
+
+Then applies BM25 and writes `data/asset-search-preprocessed.json`.
+
+### 7. Run locally
 
 ```bash
 bun run start    # preprocess + stdio MCP server
@@ -247,7 +302,7 @@ Register in `.mcp.json`:
 ## Full pipeline
 
 ```bash
-bun run pipeline    # fetch → bounds → tag → preprocess (all in sequence)
+bun run pipeline    # fetch → prepare → bounds → tag → preprocess
 ```
 
 ---
@@ -270,7 +325,7 @@ bun run pipeline    # fetch → bounds → tag → preprocess (all in sequence)
 2. Run:
 
 ```bash
-bun run pipeline     # fetch + bounds + tag + preprocess
+bun run pipeline     # fetch + prepare + bounds + tag + preprocess
 bun run deploy       # optional
 ```
 
@@ -287,7 +342,7 @@ bun run deploy       # optional
 ```
 
 2. Add R2 credentials to `.env.local`.
-3. Run `bun run preprocess` — this uploads GLBs to R2 and rewrites download URLs.
+3. Run `bun run prepare` to normalize models and upload GLBs to R2, then run `bun run preprocess`.
 
 No changes to `sources.config.json` needed — `restricted` is already a known platform.
 
@@ -298,16 +353,27 @@ No changes to `sources.config.json` needed — `restricted` is already a known p
 ```
 3d-assets-search/
 ├── data/
-│   ├── sources/                          # per-creator JSONs (gitignored, .gitkeep keeps folder)
-│   │   └── {creator}.json
+│   ├── manifests/
+│   │   ├── prepared-assets.json          # prepare stage state + final prepared URLs
+│   │   ├── bounds.json                   # computed bounds from prepared models
+│   │   └── tagged-assets.json            # styleTags + facing from visual tagging
+│   ├── sources/                          # per-source asset facts
+│   │   └── {source}.json
 │   ├── sources.config.json               # platforms → access mode + creator list
-│   └── asset-search-preprocessed.json   # built index (gitignored — derived artifact)
+│   └── asset-search-preprocessed.json    # built index (derived artifact)
 ├── scripts/
-│   ├── fetch-polypizza.ts                # poly.pizza API → sources/{creator}.json + GLB clips
-│   ├── fetch-polyhaven.ts                # Poly Haven API → sources/polyhaven.json (models + HDRIs)
-│   ├── extract-bounds.ts                 # GLB AABB extraction → bounds {x,y,z}
-│   ├── tag-style.ts                      # Gemini Vision → styleTags + facing (with bounds context)
-│   └── preprocess.ts                     # sources/*.json → BM25 index + optional R2 upload
+│   ├── fetch/
+│   │   ├── polyhaven.ts                  # Poly Haven API → sources/polyhaven.json
+│   │   └── polypizza.ts                  # poly.pizza API → sources/{creator}.json
+│   ├── prepare/                          # source download → prepared URL / R2 object
+│   ├── bounds.ts                         # prepared model URL → bounds.json
+│   ├── tag.ts                            # thumbnail + bounds → tagged-assets.json
+│   ├── preprocess.ts                     # merge manifests + build BM25 index
+│   └── lib/
+│       ├── diff.ts
+│       ├── gltf-to-glb.ts
+│       ├── hash.ts
+│       └── polyhaven-resolver.ts
 ├── src/
 │   ├── mcp-server.ts                     # stdio entry (local Claude Code / Desktop)
 │   ├── worker.ts                         # Cloudflare Workers entry (HTTP MCP + R2 serving)
@@ -332,10 +398,11 @@ No changes to `sources.config.json` needed — `restricted` is already a known p
 | `bun run fetch`       | Fetch all sources (poly.pizza + Poly Haven)                                    |
 | `bun run fetch:polypizza` | Fetch poly.pizza creators; `bun run fetch:polypizza <Name>` for one        |
 | `bun run fetch:polyhaven` | Fetch Poly Haven models + HDRIs; `--force` to refresh                      |
-| `bun run bounds`      | Extract AABB bounds from GLBs (incremental, skips HDRIs + existing bounds)     |
+| `bun run prepare`     | Normalize model formats and upload prepared GLBs to R2                         |
+| `bun run bounds`      | Extract AABB bounds from prepared, accessible model URLs                    |
 | `bun run tag`         | Generate vision-based style tags + facing via Gemini (models only, incremental) |
-| `bun run preprocess`  | Build BM25 search index from `data/sources/*.json`                             |
-| `bun run pipeline`    | `fetch` + `bounds` + `tag` + `preprocess` in sequence                          |
+| `bun run preprocess`  | Merge source + manifest state and build BM25 search index                      |
+| `bun run pipeline`    | `fetch` + `prepare` + `bounds` + `tag` + `preprocess`                          |
 | `bun run start`       | Preprocess then start local stdio MCP server                                   |
 | `bun run dev`         | Preprocess then `wrangler dev`                                                 |
 | `bun run deploy`      | Preprocess then `wrangler deploy`                                              |

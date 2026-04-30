@@ -12,7 +12,8 @@ data/asset-search-preprocessed.json
 # Source asset data — large JSON files fetched from external APIs.
 # Keep the folder with .gitkeep for local development.
 data/sources/*.json
-
+data/manifests/*.json
+docs
 # worker-configuration.d.ts is committed — regenerate with `bun run cf-typegen` after
 # changing wrangler.jsonc bindings. It is a type declaration, not a build artifact.
 
@@ -20,6 +21,7 @@ data/sources/*.json
 .env
 .env.local
 .env*.local
+.codex
 
 # OS / editor
 .DS_Store

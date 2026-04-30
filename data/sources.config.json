@@ -1,7 +1,6 @@
 {
   "platforms": {
     "poly.pizza": {
-      "access": "open",
       "creators": [
         "Quaternius",
         "Kenney",
@@ -11,14 +10,42 @@
         "Pichuliru",
         "Poly by Google",
         "Kay Lousberg"
-      ]
+      ],
+      "prepare": {
+        "model": {
+          "strategy": "passthrough",
+          "uploadToR2": false
+        },
+        "hdri": {
+          "strategy": "passthrough",
+          "uploadToR2": false
+        }
+      }
     },
     "polyhaven": {
-      "access": "open"
+      "prepare": {
+        "model": {
+          "strategy": "polyhaven-gltf-pack",
+          "uploadToR2": true
+        },
+        "hdri": {
+          "strategy": "passthrough",
+          "uploadToR2": false
+        }
+      }
     },
     "restricted": {
-      "access": "restricted",
-      "creators": []
+      "creators": [],
+      "prepare": {
+        "model": {
+          "strategy": "upload-glb",
+          "uploadToR2": true
+        },
+        "hdri": {
+          "strategy": "passthrough",
+          "uploadToR2": false
+        }
+      }
     }
   }
 }

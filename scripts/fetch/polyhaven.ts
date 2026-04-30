@@ -3,8 +3,8 @@
  * Writes data/sources/polyhaven.json with platform: "polyhaven".
  *
  * Usage:
- *   bun scripts/fetch-polyhaven.ts            # fetch if source file missing
- *   bun scripts/fetch-polyhaven.ts --force    # re-fetch everything
+ *   bun scripts/fetch/polyhaven.ts            # fetch if source file missing
+ *   bun scripts/fetch/polyhaven.ts --force    # re-fetch everything
  *
  * No env vars required — Poly Haven API is open access.
  */
@@ -13,7 +13,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const OUT_FILE = join(ROOT, "data", "sources", "polyhaven.json");
 const API_BASE = "https://api.polyhaven.com";
 const CONCURRENCY = 10;
@@ -38,13 +38,16 @@ interface FileEntry {
   url: string;
   size: number;
   md5: string;
+  include?: Record<string, FileEntry>;
 }
 
 // Poly Haven /files response is deeply nested — we only need specific paths.
-type FilesResponse = Record<
-  string,
-  Record<string, Record<string, FileEntry | Record<string, FileEntry>>>
->;
+interface FilesDirectory {
+  [key: string]: FileEntry | FilesDirectory;
+}
+
+type FilesNode = FileEntry | FilesDirectory;
+type FilesResponse = FilesDirectory;
 
 interface SourceAsset {
   id: string;
@@ -53,15 +56,14 @@ interface SourceAsset {
   category: string;
   type: "model" | "hdri";
   tags: string[];
-  styleTags: string[];
   animated: boolean;
   animationClips: string[];
   license: string;
   triCount: number;
   thumbnail: string;
   download: string;
+  downloadIncludes?: Record<string, string>;
   sourceUrl: string;
-  bounds?: { x: number; y: number; z: number };
 }
 
 // ─── Fetch helpers ────────────────────────────────────────────────────────────
@@ -76,28 +78,57 @@ async function fetchJson<T>(url: string): Promise<T> {
 
 // ─── Download URL extraction ──────────────────────────────────────────────────
 
-function extractModelUrl(files: FilesResponse, id: string): string | null {
-  // Prefer gltf at 1k resolution
-  const gltf = files.gltf as Record<string, Record<string, FileEntry>> | undefined;
-  const res1k = gltf?.["1k"];
-  if (res1k) {
-    // Find the main .gltf file entry
-    const gltfEntry = Object.values(res1k).find(
-      (entry) =>
-        typeof entry === "object" && "url" in entry && (entry as FileEntry).url.endsWith(".gltf"),
-    ) as FileEntry | undefined;
-    if (gltfEntry) return gltfEntry.url;
+function isFileEntry(node: FilesNode): node is FileEntry {
+  return typeof node === "object" && node !== null && "url" in node && "size" in node;
+}
+
+function flattenIncludes(
+  include: Record<string, FileEntry> | undefined,
+): Record<string, string> | undefined {
+  if (!include) return undefined;
+  const entries = Object.entries(include).map(
+    ([relativePath, entry]) => [relativePath, entry.url] as const,
+  );
+  if (entries.length === 0) return undefined;
+  return Object.fromEntries(entries);
+}
+
+function findFirstEntry(
+  node: FilesNode | undefined,
+  predicate: (entry: FileEntry) => boolean,
+): FileEntry | null {
+  if (!node) return null;
+  if (isFileEntry(node)) {
+    return predicate(node) ? node : null;
   }
-  // Fallback: try 2k
-  const res2k = gltf?.["2k"];
-  if (res2k) {
-    const gltfEntry = Object.values(res2k).find(
-      (entry) =>
-        typeof entry === "object" && "url" in entry && (entry as FileEntry).url.endsWith(".gltf"),
-    ) as FileEntry | undefined;
-    if (gltfEntry) return gltfEntry.url;
+  for (const child of Object.values(node)) {
+    const found = findFirstEntry(child, predicate);
+    if (found) return found;
   }
   return null;
+}
+
+function extractModelDownload(
+  files: FilesResponse,
+): { url: string; includes: Record<string, string> | undefined } | null {
+  const gltfNode = files.gltf;
+  const gltf = gltfNode && !isFileEntry(gltfNode) ? gltfNode : undefined;
+  const res1k = gltf?.["1k"];
+  const res2k = gltf?.["2k"];
+
+  const preferred =
+    findFirstEntry(res1k, (entry) => entry.url.endsWith(".zip")) ??
+    findFirstEntry(res2k, (entry) => entry.url.endsWith(".zip")) ??
+    findFirstEntry(res1k, (entry) => entry.url.endsWith(".gltf")) ??
+    findFirstEntry(res2k, (entry) => entry.url.endsWith(".gltf")) ??
+    findFirstEntry(gltf, (entry) => entry.url.endsWith(".zip")) ??
+    findFirstEntry(gltf, (entry) => entry.url.endsWith(".gltf"));
+
+  if (!preferred) return null;
+  return {
+    url: preferred.url,
+    includes: flattenIncludes(preferred.include),
+  };
 }
 
 function extractHdriUrl(files: FilesResponse, _id: string): string | null {
@@ -149,8 +180,8 @@ async function main() {
 
   // 2. Fetch /files/{id} for each asset to get download URLs
   const allEntries: Array<{ id: string; meta: ApiAssetEntry; assetType: "model" | "hdri" }> = [
-    ...modelIds.map((id) => ({ id, meta: models[id], assetType: "model" as const })),
-    ...hdriIds.map((id) => ({ id, meta: hdris[id], assetType: "hdri" as const })),
+    ...modelIds.map((id) => ({ id, meta: models[id]!, assetType: "model" as const })),
+    ...hdriIds.map((id) => ({ id, meta: hdris[id]!, assetType: "hdri" as const })),
   ];
 
   const assets: SourceAsset[] = [];
@@ -163,8 +194,9 @@ async function main() {
       batch.map(async ({ id, meta, assetType }) => {
         try {
           const files = await fetchJson<FilesResponse>(`${API_BASE}/files/${id}`);
+          const modelDownload = assetType === "model" ? extractModelDownload(files) : null;
           const downloadUrl =
-            assetType === "model" ? extractModelUrl(files, id) : extractHdriUrl(files, id);
+            assetType === "model" ? (modelDownload?.url ?? null) : extractHdriUrl(files, id);
 
           if (!downloadUrl) {
             skipped++;
@@ -182,24 +214,15 @@ async function main() {
             category,
             type: assetType,
             tags: meta.tags ?? [],
-            styleTags: [],
             animated: false,
             animationClips: [],
             license: "CC0",
             triCount: meta.polycount ?? 0,
             thumbnail: `https://cdn.polyhaven.com/asset_img/thumbs/${id}.png?width=256&height=256`,
             download: downloadUrl,
+            ...(modelDownload?.includes ? { downloadIncludes: modelDownload.includes } : {}),
             sourceUrl: `https://polyhaven.com/a/${id}`,
           };
-
-          // Add bounds from dimensions (mm) if available
-          if (assetType === "model" && meta.dimensions && meta.dimensions.length === 3) {
-            asset.bounds = {
-              x: meta.dimensions[0] / 1000,
-              y: meta.dimensions[1] / 1000,
-              z: meta.dimensions[2] / 1000,
-            };
-          }
 
           assets.push(asset);
         } catch {
